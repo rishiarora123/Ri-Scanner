@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 3rem;">
+    <h1
+        style="font-size: 3rem; background: linear-gradient(to right, #fff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+        Start Your Recon</h1>
+    <p style="color: var(--text-muted); font-size: 1.2rem;">Select a method to acquire targets and identify hidden IPs.
+    </p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+
+    <!-- Card 1 -->
+    <div class="glass" style="padding: 2rem;">
+        <h2 style="color: #60a5fa;">1. Full Recon</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Subdomain discovery -> IP Resolution -> ASN
+            Expansion -> Masscan -> Content Discovery.</p>
+        <form id="form-recon" onsubmit="startScan(event, 'recon', this)">
+            <label>Target Domain</label>
+            <input type="text" name="domain" placeholder="example.com" required>
+
+            <label>BGP URL (Optional)</label>
+            <input type="text" name="bgp_url" placeholder="bgp.he.net/...">
+
+            <label>Masscan Rate</label>
+            <input type="number" name="masscan_rate" value="10000">
+
+            <label>Chunks (0=Auto)</label>
+            <input type="number" name="masscan_chunks" value="0">
+
+            <button type="submit" class="btn" style="width: 100%; background: #2563eb;">Launch Recon</button>
+        </form>
+    </div>
+
+    <!-- Card 2 -->
+    <div class="glass" style="padding: 2rem;">
+        <h2 style="color: #34d399;">2. From Masscan Result</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Upload an existing masscan result file (-oH format)
+            to extract domains.</p>
+        <form id="form-masscan" onsubmit="startScan(event, 'masscan_file', this)">
+            <label>Masscan Result File</label>
+            <input type="file" name="file" required>
+
+            <button type="submit" class="btn" style="width: 100%; background: #059669; margin-top: 1rem;">Process
+                Results</button>
+        </form>
+    </div>
+
+    <!-- Card 3 -->
+    <div class="glass" style="padding: 2rem;">
+        <h2 style="color: #fbbf24;">3. From IP List</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Upload a list of IP ranges or CIDRs. Will run
+            Masscan then Extract.</p>
+        <form id="form-ip" onsubmit="startScan(event, 'ip_file', this)">
+            <label>IP Range File</label>
+            <input type="file" name="file" required>
+
+            <label>Masscan Rate</label>
+            <input type="number" name="masscan_rate" value="10000">
+
+            <label>Chunks (0=Auto)</label>
+            <input type="number" name="masscan_chunks" value="0">
+
+            <button type="submit" class="btn" style="width: 100%; background: #d97706;">Start Scan</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    async function startScan(e, mode, form) {
+        e.preventDefault();
+        const formData = new FormData(form);
+        formData.append('mode', mode);
+
+        // Disable buttons
+        const btn = form.querySelector('button');
+        const oldText = btn.innerText;
+        btn.innerText = "Starting...";
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/start_scan', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.status === 'started') {
+                window.location.href = '/dashboard';
+            } else {
+                alert("Error: " + JSON.stringify(data));
+                btn.innerText = oldText;
+                btn.disabled = false;
+            }
+        } catch (err) {
+            alert("Request Failed: " + err);
+            btn.innerText = oldText;
+            btn.disabled = false;
+        }
+    }
+</script>
+{% endblock %}

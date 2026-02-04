@@ -1,0 +1,8 @@
+flask
+pymongo
+aiohttp
+beautifulsoup4
+pyOpenSSL
+mmh3
+requests
+dnspython

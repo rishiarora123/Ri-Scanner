@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: grid; grid-template-columns: 300px 1fr; gap: 2rem;">
+    <!-- Sidebar / Stats -->
+    <div class="glass" style="padding: 1.5rem; height: fit-content;">
+        <h3 style="margin-top: 0;">Status</h3>
+        <div id="phase-badge"
+            style="background: var(--primary); padding: 0.5rem; border-radius: 4px; text-align: center; font-weight: bold; margin-bottom: 1rem;">
+            Idle
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem; align-items: center;">
+                <span>Masscan</span>
+                <span id="masscan-txt" style="font-size: 0.9rem; font-weight: bold;">0%</span>
+            </div>
+
+            <div
+                style="display:flex; justify-content:space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.3rem;">
+                <span id="masscan-ranges">Ranges: 0 / 0</span>
+                <span id="masscan-eta">ETA: --</span>
+            </div>
+
+            <div
+                style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 0.8rem;">
+                <div id="masscan-bar" style="width: 0%; background: #34d399; height: 100%; transition: width 0.5s;">
+                </div>
+            </div>
+
+            <!-- Thread Grid -->
+            <div style="display: font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">Chunks Status:
+            </div>
+            <div id="chunk-grid"
+                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(12px, 1fr)); gap: 3px; max-height: 100px; overflow-y: auto;">
+                <!-- Grid items injected by JS -->
+            </div>
+
+            <div style="margin-bottom: 1.5rem;">
+                <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem;">
+                    <span>Extraction</span>
+                    <span id="extract-txt">0%</span>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; overflow: hidden;">
+                    <div id="extract-bar" style="width: 0%; background: #60a5fa; height: 100%; transition: width 0.5s;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; text-align: center;">
+                <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 6px;">
+                    <div id="found-count" style="font-size: 1.5rem; color: #fff; font-weight: bold;">0</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">Results</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 6px;">
+                    <div id="active-threads" style="font-size: 1.5rem; color: #fff; font-weight: bold;">0</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">Threads</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 2rem;">
+                <button onclick="stopScan()" class="btn" style="width: 100%; background: #ef4444;">Stop Scan</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div>
+            <!-- Tabs -->
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                <div onclick="showTab('logs')" class="tab-btn active"
+                    style="cursor: pointer; padding: 0.5rem 1rem; border-bottom: 2px solid var(--primary);">Logs</div>
+                <div onclick="showTab('results')" class="tab-btn"
+                    style="cursor: pointer; padding: 0.5rem 1rem; color: var(--text-muted);">Results Search</div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="tab-logs" class="glass"
+                style="padding: 1rem; height: 500px; display: flex; flex-direction: column;">
+                <div id="log-container"
+                    style="flex: 1; overflow-y: auto; font-family: monospace; font-size: 0.9rem; color: #a5b4fc;">
+                    <div>Initializing dashboard...</div>
+                </div>
+            </div>
+
+            <!-- Results Tab -->
+            <div id="tab-results" class="glass"
+                style="padding: 1rem; height: 500px; display: none; flex-direction: column;">
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                    <input type="text" id="search-input" placeholder="Search Title, IP, or Domain..."
+                        style="margin-bottom: 0;">
+                    <button class="btn" onclick="performSearch()">Search</button>
+                    <button class="btn" style="background: #059669;" onclick="exportResults()">Export JSON</button>
+                </div>
+                <div id="results-container" style="flex: 1; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stop Scan Modal -->
+    <div id="stop-modal" class="glass"
+        style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 2rem; z-index: 1000; flex-direction: column; gap: 1rem; width: 300px; border: 1px solid rgba(255,255,255,0.2);">
+        <h3 style="margin-top: 0; text-align: center;">Stop Scan?</h3>
+        <p style="text-align: center; color: var(--text-muted);">Do you want to keep the collected data files?</p>
+        <div style="display: flex; gap: 0.5rem; justify-content: center;">
+            <button onclick="confirmStop(true)" class="btn" style="background: #10b981;">Keep Data</button>
+            <button onclick="confirmStop(false)" class="btn" style="background: #ef4444;">Delete Data</button>
+        </div>
+        <button onclick="closeModal()" class="btn" style="background: #6b7280; margin-top: 0.5rem;">Cancel</button>
+    </div>
+    <div id="modal-overlay"
+        style="display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 999;">
+    </div>
+
+    <script>
+        let logInterval, statusInterval;
+
+        function getColor(status) {
+            if (status === 'completed') return '#10b981'; // Green
+            if (status === 'running') return '#3b82f6';   // Blue
+            return 'rgba(255,255,255,0.1)';              // Gray/Pending
+        }
+
+        function showTab(tab) {
+            document.getElementById('tab-logs').style.display = tab === 'logs' ? 'flex' : 'none';
+            document.getElementById('tab-results').style.display = tab === 'results' ? 'flex' : 'none';
+
+            // Auto-fetch results if switching to results tab and empty
+            if (tab === 'results' && document.getElementById('results-container').innerHTML === "") {
+                performSearch();
+            }
+        }
+
+        async function updateStatus() {
+            try {
+                const res = await fetch('/get_status');
+                const data = await res.json();
+
+                document.getElementById('phase-badge').innerText = data.phase;
+
+                // Masscan
+                let mPct = data.masscan_total > 0 ? (data.masscan_progress / data.masscan_total * 100) : 0;
+                document.getElementById('masscan-bar').style.width = mPct + '%';
+                document.getElementById('masscan-txt').innerText = Math.round(mPct) + '%';
+
+                // Ranges & ETA
+                if (data.masscan_ranges_total > 0) {
+                    document.getElementById('masscan-ranges').innerText = `Ranges: ${data.masscan_ranges_done} / ${data.masscan_ranges_total}`;
+                } else {
+                    document.getElementById('masscan-ranges').innerText = `Ranges: 0 / 0`;
+                }
+                if (data.estimated_remaining) {
+                    document.getElementById('masscan-eta').innerText = `ETA: ${data.estimated_remaining}`;
+                }
+
+                // Chunk Grid
+                const grid = document.getElementById('chunk-grid');
+                if (data.masscan_chunks_status && data.masscan_chunks_status.length > 0) {
+                    if (grid.children.length !== data.masscan_chunks_status.length) {
+                        grid.innerHTML = data.masscan_chunks_status.map(c =>
+                            `<div id="chunk-${c.id}" title="Chunk ${c.id}: ${c.status}" style="width: 100%; aspect-ratio: 1; border-radius: 2px; background: ${getColor(c.status)};"></div>`
+                        ).join('');
+                    } else {
+                        data.masscan_chunks_status.forEach((c, i) => {
+                            const el = grid.children[i];
+                            if (el) {
+                                el.style.backgroundColor = getColor(c.status);
+                                el.title = `Chunk ${c.id}: ${c.status}`;
+                            }
+                        });
+                    }
+                } else {
+                    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #555;">Waiting...</div>';
+                }
+
+                // Extraction
+                let ePct = data.extraction_total > 0 ? (data.extraction_progress / data.extraction_total * 100) : 0;
+                document.getElementById('extract-bar').style.width = ePct + '%';
+                document.getElementById('extract-txt').innerText = Math.round(ePct) + '%';
+
+                document.getElementById('found-count').innerText = data.found_count;
+                document.getElementById('active-threads').innerText = data.active_threads || 0;
+
+            } catch (e) { console.error(e); }
+        }
+
+        async function fetchLogs() {
+            try {
+                const res = await fetch('/get_logs');
+                const logs = await res.json();
+                const container = document.getElementById('log-container');
+                container.innerHTML = logs.map(l => `<div>> ${l}</div>`).join('');
+                container.scrollTop = container.scrollHeight;
+            } catch (e) { }
+        }
+
+        async function performSearch() {
+            const q = document.getElementById('search-input').value || ""; // Default to empty
+
+            try {
+                const res = await fetch('/search/title?q=' + encodeURIComponent(q));
+                const results = await res.json();
+
+                const container = document.getElementById('results-container');
+                if (results.error) {
+                    // container.innerHTML = `<div style="color:red;">${results.error}</div>`; 
+                    // Ignore error if empty search logic isn't perfect, or show empty
+                    if (q === "") return;
+                    return;
+                }
+
+                container.innerHTML = results.map(r => `
+                <div style="background: rgba(255,255,255,0.05); padding: 1rem; margin-bottom: 0.5rem; border-radius: 4px; border-left: 3px solid var(--primary); position: relative;">
+                    <div style="font-weight: bold; color: #fff; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+                        ${r.title || 'No Title'}
+                        ${r.waf ? `<span style="font-size: 0.7rem; background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px;">WAF: ${r.waf}</span>` : ''}
+                    </div>
+                    
+                    <div style="margin-top: 0.3rem;">
+                        ${(r.technologies || []).map(t => `<span style="font-size: 0.7rem; background: #6366f1; color: white; padding: 2px 6px; border-radius: 4px; margin-right: 4px;">${t}</span>`).join('')}
+                    </div>
+
+                    <div style="font-size: 0.85rem; color: #a5b4fc; margin-top: 0.5rem;">${r.request}</div>
+                    
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
+                        <div>IP: ${r.ip} | Port: ${r.port}</div>
+                        <div>Favicon: ${r.favicon_hash || 'N/A'}</div>
+                        <div>JARM: <span style="font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 4px; border-radius: 3px;">${r.jarm_hash || 'N/A'}</span></div>
+                    </div>
+                </div>
+            `).join('');
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function stopScan() {
+            document.getElementById('stop-modal').style.display = 'flex';
+            document.getElementById('modal-overlay').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('stop-modal').style.display = 'none';
+            document.getElementById('modal-overlay').style.display = 'none';
+        }
+
+        async function confirmStop(keepData) {
+            closeModal();
+            try {
+                // Optimistic UI update
+                document.getElementById('phase-badge').innerText = "Terminating...";
+
+                await fetch('/stop_scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ save: keepData })
+                });
+                alert("Scan stopping...");
+            } catch (e) {
+                alert("Error stopping: " + e);
+            }
+        }
+
+        async function exportResults() {
+            const filename = prompt("Enter filename (e.g. results.json):");
+            if (filename) {
+                await fetch('/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
+                });
+                alert("Exported!");
+            }
+        }
+
+        statusInterval = setInterval(updateStatus, 1000);
+        logInterval = setInterval(fetchLogs, 1500);
+        updateStatus();
+    </script>
+    {% endblock %}
