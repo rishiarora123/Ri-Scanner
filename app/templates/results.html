@@ -1,0 +1,439 @@
+{% extends "base.html" %}
+
+{% block title %}Results - Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<div class="glass card" style="max-width: 1200px; margin: 0 auto;">
+    <div class="flex-between mb-lg">
+        <h2 style="margin: 0;">Search Results</h2>
+        <div class="flex gap-sm">
+            <span style="color: var(--text-muted); font-size: 0.9rem;">Total: <strong id="total-count">0</strong></span>
+        </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="flex gap-sm mb-md">
+        <input type="text" id="search-input" class="form-input" style="margin-bottom: 0; flex: 1;"
+            placeholder="Search by title, IP, or domain...">
+        <button class="btn btn-primary" onclick="performSearch(1)">Search</button>
+        <button class="btn btn-outline" onclick="toggleFilters()">Filters</button>
+        <button class="btn btn-success" onclick="exportResults()">Export</button>
+    </div>
+
+    <!-- Per Page Selector -->
+    <div class="flex gap-md mb-md" style="align-items: center;">
+        <span style="color: var(--text-muted); font-size: 0.9rem;">Show:</span>
+        <select id="per-page-select" class="form-input" style="width: auto; margin-bottom: 0;"
+            onchange="performSearch(1)">
+            <option value="10">10</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+        </select>
+        <span style="color: var(--text-muted); font-size: 0.9rem;">per page</span>
+    </div>
+
+    <!-- Advanced Filters -->
+    <div id="filters-panel" class="glass-solid mb-md hidden" style="padding: 1rem;">
+        <div class="flex-between mb-sm">
+            <h4 style="margin: 0;">Advanced Filters</h4>
+            <button class="btn btn-outline" onclick="addFilter()" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">+
+                Add Filter</button>
+        </div>
+        <div id="filters-container"></div>
+        <div class="flex gap-sm mt-md">
+            <button class="btn btn-primary" onclick="applyFilters(1)">Apply Filters</button>
+            <button class="btn btn-outline" onclick="clearFilters()">Clear All</button>
+        </div>
+    </div>
+
+    <!-- Results Container -->
+    <div id="results-container" style="min-height: 400px;"></div>
+
+    <!-- Pagination -->
+    <div id="pagination" class="flex-center gap-sm mt-lg" style="flex-wrap: wrap;"></div>
+</div>
+
+<!-- Result Detail Modal -->
+<div id="modal-overlay" class="modal-overlay"></div>
+<div id="detail-modal" class="glass modal" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
+    <div class="flex-between mb-md">
+        <h3 class="modal-title" style="margin: 0;">Result Details</h3>
+        <button onclick="closeModal()" class="btn btn-outline" style="padding: 0.25rem 0.5rem;">✕</button>
+    </div>
+    <div id="detail-content">Loading...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .filter-row {
+        display: grid;
+        grid-template-columns: 1fr 140px 1fr auto;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        align-items: center;
+    }
+
+    .filter-row select,
+    .filter-row input {
+        padding: 0.5rem;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--radius-sm);
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+
+    .filter-remove {
+        background: transparent;
+        border: none;
+        color: var(--danger);
+        cursor: pointer;
+        font-size: 1.2rem;
+        padding: 0.25rem;
+    }
+
+    .detail-section {
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: var(--radius-sm);
+    }
+
+    .detail-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+    }
+
+    .detail-value {
+        font-family: 'JetBrains Mono', monospace;
+        word-break: break-all;
+    }
+
+    .page-btn {
+        min-width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .page-btn:hover:not(.active):not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text-primary);
+    }
+
+    .page-btn.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
+    }
+
+    .page-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .domain-badge {
+        font-size: 0.8rem;
+        color: var(--info);
+        background: rgba(6, 182, 212, 0.15);
+        padding: 2px 8px;
+        border-radius: 4px;
+        margin-left: 0.5rem;
+    }
+</style>
+
+<script>
+    let currentPage = 1;
+    let totalPages = 1;
+    let filtersVisible = false;
+    let filterCount = 0;
+    let useAdvancedFilters = false;
+
+    // Perform search with pagination
+    async function performSearch(page = 1) {
+        currentPage = page;
+        const q = document.getElementById('search-input').value || '';
+        const perPage = document.getElementById('per-page-select').value;
+
+        try {
+            const res = await fetch(`/search/title?q=${encodeURIComponent(q)}&page=${page}&per_page=${perPage}`);
+            const data = await res.json();
+
+            if (data.error) {
+                console.error(data.error);
+                return;
+            }
+
+            totalPages = data.total_pages;
+            document.getElementById('total-count').innerText = data.total;
+
+            renderResults(data.results);
+            renderPagination();
+        } catch (e) {
+            console.error('Search error:', e);
+        }
+    }
+
+    // Render results
+    function renderResults(results) {
+        const container = document.getElementById('results-container');
+
+        if (!results || !results.length) {
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 3rem;">No results found</div>';
+            return;
+        }
+
+        container.innerHTML = results.map((r, idx) => {
+            const resp = r.http_responseForIP || r.https_responseForIP ||
+                r.http_responseForDomainName || r.https_responseForDomainName || {};
+            const data = Array.isArray(resp) ? resp[0] || {} : resp;
+
+            const techTags = (data.technologies || [])
+                .map(t => `<span class="tag tag-tech">${t}</span>`).join('');
+            const wafTag = data.waf ? `<span class="tag tag-waf">WAF: ${data.waf}</span>` : '';
+            const domainBadge = data.domain ? `<span class="domain-badge">${data.domain}</span>` : '';
+
+            return `
+            <div class="result-card" onclick="showDetail(${idx})" style="cursor: pointer;" data-result='${JSON.stringify(r).replace(/'/g, "&#39;")}'>
+                <div class="result-title">
+                    ${data.title || 'No Title'}
+                    ${domainBadge}
+                    ${wafTag}
+                </div>
+                <div style="margin-top: 0.25rem;">${techTags}</div>
+                <div class="result-url">${data.request || 'N/A'}</div>
+                <div class="result-meta">
+                    <div><strong>IP:</strong> ${data.ip || 'N/A'}</div>
+                    <div><strong>Port:</strong> ${data.port || 'N/A'}</div>
+                    <div><strong>Domain:</strong> ${data.domain || 'N/A'}</div>
+                    <div><strong>Favicon:</strong> <span class="font-mono">${data.favicon_hash || 'N/A'}</span></div>
+                </div>
+            </div>
+        `;
+        }).join('');
+    }
+
+    // Render pagination
+    function renderPagination() {
+        const container = document.getElementById('pagination');
+
+        if (totalPages <= 1) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+
+        // Previous button
+        html += `<button class="page-btn" onclick="performSearch(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>←</button>`;
+
+        // Page numbers
+        const maxVisible = 7;
+        let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+
+        if (endPage - startPage < maxVisible - 1) {
+            startPage = Math.max(1, endPage - maxVisible + 1);
+        }
+
+        if (startPage > 1) {
+            html += `<button class="page-btn" onclick="performSearch(1)">1</button>`;
+            if (startPage > 2) html += `<span style="color: var(--text-muted);">...</span>`;
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="performSearch(${i})">${i}</button>`;
+        }
+
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) html += `<span style="color: var(--text-muted);">...</span>`;
+            html += `<button class="page-btn" onclick="performSearch(${totalPages})">${totalPages}</button>`;
+        }
+
+        // Next button
+        html += `<button class="page-btn" onclick="performSearch(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>→</button>`;
+
+        container.innerHTML = html;
+    }
+
+    // Filters
+    function toggleFilters() {
+        filtersVisible = !filtersVisible;
+        document.getElementById('filters-panel').classList.toggle('hidden', !filtersVisible);
+        if (filtersVisible && filterCount === 0) addFilter();
+    }
+
+    function addFilter() {
+        filterCount++;
+        const container = document.getElementById('filters-container');
+        const row = document.createElement('div');
+        row.className = 'filter-row';
+        row.id = `filter-${filterCount}`;
+        row.innerHTML = `
+        <select class="filter-field">
+            <option value="title">Title</option>
+            <option value="ip">IP</option>
+            <option value="domain">Domain</option>
+            <option value="waf">WAF</option>
+            <option value="technologies">Technology</option>
+            <option value="port">Port</option>
+            <option value="jarm_hash">JARM Hash</option>
+            <option value="favicon_hash">Favicon Hash</option>
+        </select>
+        <select class="filter-operator">
+            <option value="contains">Contains</option>
+            <option value="not_contains">Not Contains</option>
+            <option value="equals">Equals</option>
+            <option value="not_equals">Not Equals</option>
+        </select>
+        <input type="text" class="filter-value" placeholder="Value...">
+        <button class="filter-remove" onclick="removeFilter(${filterCount})">×</button>
+    `;
+        container.appendChild(row);
+    }
+
+    function removeFilter(id) {
+        const row = document.getElementById(`filter-${id}`);
+        if (row) row.remove();
+    }
+
+    function clearFilters() {
+        document.getElementById('filters-container').innerHTML = '';
+        filterCount = 0;
+        addFilter();
+    }
+
+    async function applyFilters(page = 1) {
+        currentPage = page;
+        const rows = document.querySelectorAll('.filter-row');
+        const filters = [];
+        const perPage = document.getElementById('per-page-select').value;
+
+        rows.forEach(row => {
+            const field = row.querySelector('.filter-field').value;
+            const operator = row.querySelector('.filter-operator').value;
+            const value = row.querySelector('.filter-value').value.trim();
+            if (value) filters.push({ field, operator, value });
+        });
+
+        try {
+            const res = await fetch('/search/advanced', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filters, page, per_page: parseInt(perPage) })
+            });
+            const data = await res.json();
+
+            if (Array.isArray(data)) {
+                // Old response format without pagination
+                document.getElementById('total-count').innerText = data.length;
+                renderResults(data);
+                totalPages = 1;
+            } else {
+                totalPages = data.total_pages || 1;
+                document.getElementById('total-count').innerText = data.total || data.results?.length || 0;
+                renderResults(data.results || data);
+            }
+            renderPagination();
+        } catch (e) {
+            console.error('Filter error:', e);
+        }
+    }
+
+    // Detail Modal
+    function showDetail(idx) {
+        const cards = document.querySelectorAll('.result-card');
+        const resultData = JSON.parse(cards[idx].dataset.result);
+
+        let content = '';
+        const responseTypes = [
+            ['https_responseForIP', 'HTTPS Response (IP)'],
+            ['http_responseForIP', 'HTTP Response (IP)'],
+            ['https_responseForDomainName', 'HTTPS Response (Domain)'],
+            ['http_responseForDomainName', 'HTTP Response (Domain)']
+        ];
+
+        responseTypes.forEach(([key, label]) => {
+            if (resultData[key]) {
+                const data = Array.isArray(resultData[key]) ? resultData[key][0] : resultData[key];
+                if (data) {
+                    content += `
+                    <div class="detail-section">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text-accent);">${label}</h4>
+                        <div class="detail-label">URL</div>
+                        <div class="detail-value">${data.request || 'N/A'}</div>
+                        <div class="detail-label mt-sm">Title</div>
+                        <div class="detail-value">${data.title || 'N/A'}</div>
+                        <div class="detail-label mt-sm">IP / Port</div>
+                        <div class="detail-value">${data.ip || 'N/A'}:${data.port || 'N/A'}</div>
+                        <div class="detail-label mt-sm">Domain</div>
+                        <div class="detail-value">${data.domain || 'N/A'}</div>
+                        ${data.redirected_url ? `<div class="detail-label mt-sm">Redirected To</div><div class="detail-value">${data.redirected_url}</div>` : ''}
+                        <div class="detail-label mt-sm">Technologies</div>
+                        <div>${(data.technologies || []).map(t => `<span class="tag tag-tech">${t}</span>`).join(' ') || 'None'}</div>
+                        ${data.waf ? `<div class="detail-label mt-sm">WAF</div><div><span class="tag tag-waf">${data.waf}</span></div>` : ''}
+                        <div class="detail-label mt-sm">Favicon Hash</div>
+                        <div class="detail-value">${data.favicon_hash || 'N/A'}</div>
+                        <div class="detail-label mt-sm">JARM Hash</div>
+                        <div class="detail-value" style="font-size: 0.8rem;">${data.jarm_hash || 'N/A'}</div>
+                        ${data.response_headers ? `
+                            <div class="detail-label mt-sm">Response Headers</div>
+                            <div class="detail-value" style="font-size: 0.75rem; max-height: 150px; overflow-y: auto;">
+                                ${Object.entries(data.response_headers).map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                }
+            }
+        });
+
+        if (!content) content = '<div style="text-align: center; color: var(--text-muted);">No response data</div>';
+
+        document.getElementById('detail-content').innerHTML = content;
+        document.getElementById('detail-modal').classList.add('active');
+        document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('detail-modal').classList.remove('active');
+        document.getElementById('modal-overlay').classList.remove('active');
+    }
+
+    // Export
+    async function exportResults() {
+        const filename = prompt('Enter filename (e.g. results.json):');
+        if (!filename) return;
+        try {
+            await fetch('/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            alert('Export complete!');
+        } catch (e) {
+            alert('Export failed: ' + e);
+        }
+    }
+
+    // Initialize
+    performSearch(1);
+
+    // Enter key for search
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') performSearch(1);
+    });
+
+    document.getElementById('modal-overlay').addEventListener('click', closeModal);
+</script>
+{% endblock %}

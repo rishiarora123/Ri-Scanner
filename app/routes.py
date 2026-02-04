@@ -48,6 +48,10 @@ def home():
 def dashboard():
     return render_template("dashboard.html")
 
+@main_bp.route("/results")
+def results_page():
+    return render_template("results.html")
+
 @main_bp.route("/start_scan", methods=["POST"])
 def start_scan():
     mode = request.form.get("mode")
@@ -185,27 +189,43 @@ def insert():
 def search_title():
     try:
         query = request.args.get("q", "").strip()
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 50))
+        
+        # Clamp values
+        page = max(1, page)
+        per_page = min(max(10, per_page), 200)
+        skip = (page - 1) * per_page
         
         if not query:
             # Return recent results if no query
-            # Sort by _id descending to get newest first
-            results = list(current_app.db["sslchecker"].find({}, {"_id": 0}).sort("_id", -1).limit(50))
-            return jsonify(results)
+            total = current_app.db["sslchecker"].count_documents({})
+            results = list(current_app.db["sslchecker"].find({}, {"_id": 0}).sort("_id", -1).skip(skip).limit(per_page))
+        else:
+            regex = Regex(rf".*{re.escape(query)}.*", "i")
+            db_query = {
+                "$or": [
+                    {"http_responseForIP.title": regex},
+                    {"https_responseForIP.title": regex},
+                    {"http_responseForDomainName.title": regex},
+                    {"https_responseForDomainName.title": regex},
+                    {"http_responseForIP.domain": regex},
+                    {"https_responseForIP.domain": regex},
+                    {"http_responseForIP.ip": regex},
+                ]
+            }
+            total = current_app.db["sslchecker"].count_documents(db_query)
+            results = list(current_app.db["sslchecker"].find(db_query, {"_id": 0}).skip(skip).limit(per_page))
         
-        regex = Regex(rf".*{re.escape(query)}.*", "i")
-        db_query = {
-            "$or": [
-                {"http_responseForIP.title": regex},
-                {"https_responseForIP.title": regex},
-                {"http_responseForDomainName.title": regex},
-                {"https_responseForDomainName.title": regex},
-                {"http_responseForIP.domain": regex}, # Also search domain field
-                {"https_responseForIP.domain": regex},
-                {"http_responseForIP.ip": regex}, # Also search IP
-            ]
-        }
-        results = list(current_app.db["sslchecker"].find(db_query, {"_id": 0}).limit(100))
-        return jsonify(results)
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+        
+        return jsonify({
+            "results": results,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages
+        })
     except Exception as e:
         print(e)
         return jsonify({"error": str(e)}), 500

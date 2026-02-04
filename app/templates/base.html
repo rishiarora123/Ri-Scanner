@@ -27,6 +27,7 @@
         <div class="nav-links flex gap-md">
             <a href="/" class="{% if request.endpoint == 'main.home' %}active{% endif %}">New Scan</a>
             <a href="/dashboard" class="{% if request.endpoint == 'main.dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="/results" class="{% if request.endpoint == 'main.results_page' %}active{% endif %}">Results</a>
         </div>
     </nav>
 
