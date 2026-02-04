@@ -1,280 +1,552 @@
 {% extends "base.html" %}
 
+{% block title %}Dashboard - Ri-Scanner Pro{% endblock %}
+
 {% block content %}
-<div style="display: grid; grid-template-columns: 300px 1fr; gap: 2rem;">
+<div style="display: grid; grid-template-columns: 320px 1fr; gap: 2rem;">
     <!-- Sidebar / Stats -->
-    <div class="glass" style="padding: 1.5rem; height: fit-content;">
-        <h3 style="margin-top: 0;">Status</h3>
-        <div id="phase-badge"
-            style="background: var(--primary); padding: 0.5rem; border-radius: 4px; text-align: center; font-weight: bold; margin-bottom: 1rem;">
-            Idle
-        </div>
+    <aside class="glass card" style="height: fit-content; position: sticky; top: 100px;">
+        <h3 style="margin-top: 0; margin-bottom: 1rem;">Scan Status</h3>
 
-        <div style="margin-bottom: 1.5rem;">
-            <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem; align-items: center;">
+        <!-- Phase Badge -->
+        <div id="phase-badge" class="phase-badge idle">Idle</div>
+
+        <!-- Masscan Progress -->
+        <div class="progress-container">
+            <div class="progress-header">
                 <span>Masscan</span>
-                <span id="masscan-txt" style="font-size: 0.9rem; font-weight: bold;">0%</span>
+                <span id="masscan-txt" style="font-weight: 600;">0%</span>
             </div>
-
-            <div
-                style="display:flex; justify-content:space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.3rem;">
+            <div class="progress-bar">
+                <div id="masscan-bar" class="progress-fill" style="width: 0%;"></div>
+            </div>
+            <div class="flex-between mt-sm" style="font-size: 0.75rem; color: var(--text-muted);">
                 <span id="masscan-ranges">Ranges: 0 / 0</span>
                 <span id="masscan-eta">ETA: --</span>
             </div>
+        </div>
 
-            <div
-                style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 0.8rem;">
-                <div id="masscan-bar" style="width: 0%; background: #34d399; height: 100%; transition: width 0.5s;">
-                </div>
-            </div>
-
-            <!-- Thread Grid -->
-            <div style="display: font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">Chunks Status:
-            </div>
-            <div id="chunk-grid"
-                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(12px, 1fr)); gap: 3px; max-height: 100px; overflow-y: auto;">
-                <!-- Grid items injected by JS -->
-            </div>
-
-            <div style="margin-bottom: 1.5rem;">
-                <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem;">
-                    <span>Extraction</span>
-                    <span id="extract-txt">0%</span>
-                </div>
-                <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; overflow: hidden;">
-                    <div id="extract-bar" style="width: 0%; background: #60a5fa; height: 100%; transition: width 0.5s;">
-                    </div>
-                </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; text-align: center;">
-                <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 6px;">
-                    <div id="found-count" style="font-size: 1.5rem; color: #fff; font-weight: bold;">0</div>
-                    <div style="font-size: 0.8rem; color: var(--text-muted);">Results</div>
-                </div>
-                <div style="background: rgba(255,255,255,0.05); padding: 0.5rem; border-radius: 6px;">
-                    <div id="active-threads" style="font-size: 1.5rem; color: #fff; font-weight: bold;">0</div>
-                    <div style="font-size: 0.8rem; color: var(--text-muted);">Threads</div>
-                </div>
-            </div>
-
-            <div style="margin-top: 2rem;">
-                <button onclick="stopScan()" class="btn" style="width: 100%; background: #ef4444;">Stop Scan</button>
+        <!-- Chunk Grid -->
+        <div style="margin-bottom: 1rem;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Chunks Status:</div>
+            <div id="chunk-grid" class="chunk-grid">
+                <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 0.5rem;">
+                    Waiting...</div>
             </div>
         </div>
 
-        <!-- Main Content -->
-        <div>
-            <!-- Tabs -->
-            <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
-                <div onclick="showTab('logs')" class="tab-btn active"
-                    style="cursor: pointer; padding: 0.5rem 1rem; border-bottom: 2px solid var(--primary);">Logs</div>
-                <div onclick="showTab('results')" class="tab-btn"
-                    style="cursor: pointer; padding: 0.5rem 1rem; color: var(--text-muted);">Results Search</div>
+        <!-- Extraction Progress -->
+        <div class="progress-container">
+            <div class="progress-header">
+                <span>Extraction</span>
+                <span id="extract-txt">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div id="extract-bar" class="progress-fill blue" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stat-grid mt-md">
+            <div class="stat-card">
+                <div id="found-count" class="stat-value">0</div>
+                <div class="stat-label">Results</div>
+            </div>
+            <div class="stat-card">
+                <div id="active-threads" class="stat-value">0</div>
+                <div class="stat-label">Threads</div>
+            </div>
+        </div>
+
+        <!-- Stop Button -->
+        <button onclick="showStopModal()" class="btn btn-danger btn-full mt-lg">Stop Scan</button>
+    </aside>
+
+    <!-- Main Content -->
+    <div>
+        <!-- Tabs -->
+        <div class="tabs">
+            <div onclick="showTab('logs')" class="tab-btn active" data-tab="logs">Live Logs</div>
+            <div onclick="showTab('results')" class="tab-btn" data-tab="results">Results Search</div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div id="tab-logs" class="glass tab-content active" style="padding: 0;">
+            <div id="log-container" class="log-container">
+                <div class="log-entry">Initializing dashboard...</div>
+            </div>
+        </div>
+
+        <!-- Results Tab -->
+        <div id="tab-results" class="glass tab-content" style="padding: 1rem;">
+            <!-- Quick Search -->
+            <div class="flex gap-sm mb-md">
+                <input type="text" id="search-input" class="form-input" style="margin-bottom: 0; flex: 1;"
+                    placeholder="Quick search...">
+                <button class="btn btn-primary" onclick="performSearch()">Search</button>
+                <button class="btn btn-outline" onclick="toggleFilters()">Filters</button>
+                <button class="btn btn-success" onclick="exportResults()">Export</button>
             </div>
 
-            <!-- Logs Tab -->
-            <div id="tab-logs" class="glass"
-                style="padding: 1rem; height: 500px; display: flex; flex-direction: column;">
-                <div id="log-container"
-                    style="flex: 1; overflow-y: auto; font-family: monospace; font-size: 0.9rem; color: #a5b4fc;">
-                    <div>Initializing dashboard...</div>
+            <!-- Advanced Filters -->
+            <div id="filters-panel" class="glass-solid mb-md hidden" style="padding: 1rem;">
+                <div class="flex-between mb-sm">
+                    <h4 style="margin: 0;">Advanced Filters</h4>
+                    <button class="btn btn-outline" onclick="addFilter()"
+                        style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">+ Add Filter</button>
+                </div>
+                <div id="filters-container">
+                    <!-- Filters will be added here -->
+                </div>
+                <div class="flex gap-sm mt-md">
+                    <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+                    <button class="btn btn-outline" onclick="clearFilters()">Clear All</button>
                 </div>
             </div>
 
-            <!-- Results Tab -->
-            <div id="tab-results" class="glass"
-                style="padding: 1rem; height: 500px; display: none; flex-direction: column;">
-                <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-                    <input type="text" id="search-input" placeholder="Search Title, IP, or Domain..."
-                        style="margin-bottom: 0;">
-                    <button class="btn" onclick="performSearch()">Search</button>
-                    <button class="btn" style="background: #059669;" onclick="exportResults()">Export JSON</button>
-                </div>
-                <div id="results-container" style="flex: 1; overflow-y: auto;"></div>
-            </div>
+            <div id="results-container" style="flex: 1; overflow-y: auto; max-height: 600px;"></div>
         </div>
     </div>
+</div>
 
-    <!-- Stop Scan Modal -->
-    <div id="stop-modal" class="glass"
-        style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 2rem; z-index: 1000; flex-direction: column; gap: 1rem; width: 300px; border: 1px solid rgba(255,255,255,0.2);">
-        <h3 style="margin-top: 0; text-align: center;">Stop Scan?</h3>
-        <p style="text-align: center; color: var(--text-muted);">Do you want to keep the collected data files?</p>
-        <div style="display: flex; gap: 0.5rem; justify-content: center;">
-            <button onclick="confirmStop(true)" class="btn" style="background: #10b981;">Keep Data</button>
-            <button onclick="confirmStop(false)" class="btn" style="background: #ef4444;">Delete Data</button>
-        </div>
-        <button onclick="closeModal()" class="btn" style="background: #6b7280; margin-top: 0.5rem;">Cancel</button>
+<!-- Stop Modal -->
+<div id="modal-overlay" class="modal-overlay"></div>
+<div id="stop-modal" class="glass modal">
+    <h3 class="modal-title">Stop Scan?</h3>
+    <p class="modal-body">Do you want to keep the collected data files?</p>
+    <div class="modal-actions">
+        <button onclick="confirmStop(true)" class="btn btn-success">Keep Data</button>
+        <button onclick="confirmStop(false)" class="btn btn-danger">Delete Data</button>
     </div>
-    <div id="modal-overlay"
-        style="display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: 999;">
+    <button onclick="closeModal()" class="btn btn-outline btn-full mt-md">Cancel</button>
+</div>
+
+<!-- Result Detail Modal -->
+<div id="detail-modal" class="glass modal" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
+    <div class="flex-between mb-md">
+        <h3 class="modal-title" style="margin: 0;">Result Details</h3>
+        <button onclick="closeDetailModal()" class="btn btn-outline" style="padding: 0.25rem 0.5rem;">✕</button>
     </div>
+    <div id="detail-content">Loading...</div>
+</div>
+{% endblock %}
 
-    <script>
-        let logInterval, statusInterval;
+{% block scripts %}
+<style>
+    .filter-row {
+        display: grid;
+        grid-template-columns: 1fr 140px 1fr auto;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        align-items: center;
+    }
 
-        function getColor(status) {
-            if (status === 'completed') return '#10b981'; // Green
-            if (status === 'running') return '#3b82f6';   // Blue
-            return 'rgba(255,255,255,0.1)';              // Gray/Pending
+    .filter-row select,
+    .filter-row input {
+        padding: 0.5rem;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--radius-sm);
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+
+    .filter-remove {
+        background: transparent;
+        border: none;
+        color: var(--danger);
+        cursor: pointer;
+        font-size: 1.2rem;
+        padding: 0.25rem;
+    }
+
+    .detail-section {
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: var(--radius-sm);
+    }
+
+    .detail-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+    }
+
+    .detail-value {
+        font-family: 'JetBrains Mono', monospace;
+        word-break: break-all;
+    }
+</style>
+
+<script>
+    // Dashboard state
+    let logInterval, statusInterval;
+    let lastLogCount = 0;
+    let filtersVisible = false;
+    let filterCount = 0;
+
+    // Utility functions
+    function getChunkColor(status) {
+        const colors = {
+            'completed': 'var(--success)',
+            'running': 'var(--secondary)',
+            'pending': 'rgba(255, 255, 255, 0.1)'
+        };
+        return colors[status] || colors.pending;
+    }
+
+    function getChunkClass(status) {
+        return `chunk-cell ${status || 'pending'}`;
+    }
+
+    // Tab switching
+    function showTab(tab) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+        document.getElementById(`tab-${tab}`).classList.add('active');
+        document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+
+        if (tab === 'results' && !document.getElementById('results-container').innerHTML.trim()) {
+            performSearch();
         }
+    }
 
-        function showTab(tab) {
-            document.getElementById('tab-logs').style.display = tab === 'logs' ? 'flex' : 'none';
-            document.getElementById('tab-results').style.display = tab === 'results' ? 'flex' : 'none';
+    // Status updates
+    async function updateStatus() {
+        try {
+            const res = await fetch('/get_status');
+            const data = await res.json();
 
-            // Auto-fetch results if switching to results tab and empty
-            if (tab === 'results' && document.getElementById('results-container').innerHTML === "") {
-                performSearch();
+            const badge = document.getElementById('phase-badge');
+            badge.innerText = data.phase;
+            badge.className = 'phase-badge';
+            if (data.phase.includes('Masscan')) badge.classList.add('scanning');
+            else if (data.phase.includes('Extraction')) badge.classList.add('extracting');
+            else if (data.phase === 'Idle') badge.classList.add('idle');
+
+            const mPct = data.masscan_total > 0 ? (data.masscan_progress / data.masscan_total * 100) : 0;
+            document.getElementById('masscan-bar').style.width = `${mPct}%`;
+            document.getElementById('masscan-txt').innerText = `${Math.round(mPct)}%`;
+
+            document.getElementById('masscan-ranges').innerText =
+                `Ranges: ${data.masscan_ranges_done || 0} / ${data.masscan_ranges_total || 0}`;
+            document.getElementById('masscan-eta').innerText =
+                `ETA: ${data.estimated_remaining || '--'}`;
+
+            const grid = document.getElementById('chunk-grid');
+            if (data.masscan_chunks_status && data.masscan_chunks_status.length > 0) {
+                if (grid.children.length !== data.masscan_chunks_status.length) {
+                    grid.innerHTML = data.masscan_chunks_status.map(c =>
+                        `<div class="${getChunkClass(c.status)}" title="Chunk ${c.id}: ${c.status}" style="background: ${getChunkColor(c.status)};"></div>`
+                    ).join('');
+                } else {
+                    data.masscan_chunks_status.forEach((c, i) => {
+                        const el = grid.children[i];
+                        if (el) {
+                            el.style.backgroundColor = getChunkColor(c.status);
+                            el.className = getChunkClass(c.status);
+                            el.title = `Chunk ${c.id}: ${c.status}`;
+                        }
+                    });
+                }
             }
+
+            const ePct = data.extraction_total > 0 ? (data.extraction_progress / data.extraction_total * 100) : 0;
+            document.getElementById('extract-bar').style.width = `${ePct}%`;
+            document.getElementById('extract-txt').innerText = `${Math.round(ePct)}%`;
+
+            document.getElementById('found-count').innerText = data.found_count || 0;
+            document.getElementById('active-threads').innerText = data.active_threads || 0;
+
+        } catch (e) {
+            console.error('Status update error:', e);
         }
+    }
 
-        async function updateStatus() {
-            try {
-                const res = await fetch('/get_status');
-                const data = await res.json();
+    // Log fetching
+    async function fetchLogs() {
+        try {
+            const res = await fetch('/get_logs');
+            const logs = await res.json();
 
-                document.getElementById('phase-badge').innerText = data.phase;
-
-                // Masscan
-                let mPct = data.masscan_total > 0 ? (data.masscan_progress / data.masscan_total * 100) : 0;
-                document.getElementById('masscan-bar').style.width = mPct + '%';
-                document.getElementById('masscan-txt').innerText = Math.round(mPct) + '%';
-
-                // Ranges & ETA
-                if (data.masscan_ranges_total > 0) {
-                    document.getElementById('masscan-ranges').innerText = `Ranges: ${data.masscan_ranges_done} / ${data.masscan_ranges_total}`;
-                } else {
-                    document.getElementById('masscan-ranges').innerText = `Ranges: 0 / 0`;
-                }
-                if (data.estimated_remaining) {
-                    document.getElementById('masscan-eta').innerText = `ETA: ${data.estimated_remaining}`;
-                }
-
-                // Chunk Grid
-                const grid = document.getElementById('chunk-grid');
-                if (data.masscan_chunks_status && data.masscan_chunks_status.length > 0) {
-                    if (grid.children.length !== data.masscan_chunks_status.length) {
-                        grid.innerHTML = data.masscan_chunks_status.map(c =>
-                            `<div id="chunk-${c.id}" title="Chunk ${c.id}: ${c.status}" style="width: 100%; aspect-ratio: 1; border-radius: 2px; background: ${getColor(c.status)};"></div>`
-                        ).join('');
-                    } else {
-                        data.masscan_chunks_status.forEach((c, i) => {
-                            const el = grid.children[i];
-                            if (el) {
-                                el.style.backgroundColor = getColor(c.status);
-                                el.title = `Chunk ${c.id}: ${c.status}`;
-                            }
-                        });
-                    }
-                } else {
-                    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #555;">Waiting...</div>';
-                }
-
-                // Extraction
-                let ePct = data.extraction_total > 0 ? (data.extraction_progress / data.extraction_total * 100) : 0;
-                document.getElementById('extract-bar').style.width = ePct + '%';
-                document.getElementById('extract-txt').innerText = Math.round(ePct) + '%';
-
-                document.getElementById('found-count').innerText = data.found_count;
-                document.getElementById('active-threads').innerText = data.active_threads || 0;
-
-            } catch (e) { console.error(e); }
-        }
-
-        async function fetchLogs() {
-            try {
-                const res = await fetch('/get_logs');
-                const logs = await res.json();
+            if (logs.length !== lastLogCount) {
                 const container = document.getElementById('log-container');
-                container.innerHTML = logs.map(l => `<div>> ${l}</div>`).join('');
+                container.innerHTML = logs.map(l => {
+                    let className = 'log-entry';
+                    if (l.includes('FOUND:')) className += ' found';
+                    else if (l.includes('[!]')) className += ' error';
+                    return `<div class="${className}">> ${l}</div>`;
+                }).join('');
                 container.scrollTop = container.scrollHeight;
-            } catch (e) { }
+                lastLogCount = logs.length;
+            }
+        } catch (e) { }
+    }
+
+    // Quick Search
+    async function performSearch() {
+        const q = document.getElementById('search-input').value || '';
+
+        try {
+            const res = await fetch(`/search/title?q=${encodeURIComponent(q)}`);
+            const results = await res.json();
+            renderResults(results);
+        } catch (e) {
+            console.error('Search error:', e);
+        }
+    }
+
+    // Filters
+    function toggleFilters() {
+        filtersVisible = !filtersVisible;
+        document.getElementById('filters-panel').classList.toggle('hidden', !filtersVisible);
+        if (filtersVisible && filterCount === 0) {
+            addFilter();
+        }
+    }
+
+    function addFilter() {
+        filterCount++;
+        const container = document.getElementById('filters-container');
+        const row = document.createElement('div');
+        row.className = 'filter-row';
+        row.id = `filter-${filterCount}`;
+        row.innerHTML = `
+        <select class="filter-field">
+            <option value="title">Title</option>
+            <option value="ip">IP</option>
+            <option value="domain">Domain</option>
+            <option value="waf">WAF</option>
+            <option value="technologies">Technology</option>
+            <option value="port">Port</option>
+            <option value="jarm_hash">JARM Hash</option>
+            <option value="favicon_hash">Favicon Hash</option>
+        </select>
+        <select class="filter-operator">
+            <option value="contains">Contains</option>
+            <option value="not_contains">Not Contains</option>
+            <option value="equals">Equals</option>
+            <option value="not_equals">Not Equals</option>
+        </select>
+        <input type="text" class="filter-value" placeholder="Value...">
+        <button class="filter-remove" onclick="removeFilter(${filterCount})">×</button>
+    `;
+        container.appendChild(row);
+    }
+
+    function removeFilter(id) {
+        const row = document.getElementById(`filter-${id}`);
+        if (row) row.remove();
+    }
+
+    function clearFilters() {
+        document.getElementById('filters-container').innerHTML = '';
+        filterCount = 0;
+        addFilter();
+    }
+
+    async function applyFilters() {
+        const rows = document.querySelectorAll('.filter-row');
+        const filters = [];
+
+        rows.forEach(row => {
+            const field = row.querySelector('.filter-field').value;
+            const operator = row.querySelector('.filter-operator').value;
+            const value = row.querySelector('.filter-value').value.trim();
+
+            if (value) {
+                filters.push({ field, operator, value });
+            }
+        });
+
+        try {
+            const res = await fetch('/search/advanced', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filters })
+            });
+            const results = await res.json();
+            renderResults(results);
+        } catch (e) {
+            console.error('Filter error:', e);
+        }
+    }
+
+    // Render Results
+    function renderResults(results) {
+        if (results.error) return;
+
+        const container = document.getElementById('results-container');
+
+        if (!results.length) {
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No results found</div>';
+            return;
         }
 
-        async function performSearch() {
-            const q = document.getElementById('search-input').value || ""; // Default to empty
+        container.innerHTML = results.map((r, idx) => {
+            const resp = r.http_responseForIP || r.https_responseForIP ||
+                r.http_responseForDomainName || r.https_responseForDomainName || {};
+            const data = Array.isArray(resp) ? resp[0] || {} : resp;
 
-            try {
-                const res = await fetch('/search/title?q=' + encodeURIComponent(q));
-                const results = await res.json();
+            const techTags = (data.technologies || [])
+                .map(t => `<span class="tag tag-tech">${t}</span>`).join('');
+            const wafTag = data.waf ? `<span class="tag tag-waf">WAF: ${data.waf}</span>` : '';
 
-                const container = document.getElementById('results-container');
-                if (results.error) {
-                    // container.innerHTML = `<div style="color:red;">${results.error}</div>`; 
-                    // Ignore error if empty search logic isn't perfect, or show empty
-                    if (q === "") return;
-                    return;
-                }
-
-                container.innerHTML = results.map(r => `
-                <div style="background: rgba(255,255,255,0.05); padding: 1rem; margin-bottom: 0.5rem; border-radius: 4px; border-left: 3px solid var(--primary); position: relative;">
-                    <div style="font-weight: bold; color: #fff; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
-                        ${r.title || 'No Title'}
-                        ${r.waf ? `<span style="font-size: 0.7rem; background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px;">WAF: ${r.waf}</span>` : ''}
-                    </div>
-                    
-                    <div style="margin-top: 0.3rem;">
-                        ${(r.technologies || []).map(t => `<span style="font-size: 0.7rem; background: #6366f1; color: white; padding: 2px 6px; border-radius: 4px; margin-right: 4px;">${t}</span>`).join('')}
-                    </div>
-
-                    <div style="font-size: 0.85rem; color: #a5b4fc; margin-top: 0.5rem;">${r.request}</div>
-                    
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.3rem; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
-                        <div>IP: ${r.ip} | Port: ${r.port}</div>
-                        <div>Favicon: ${r.favicon_hash || 'N/A'}</div>
-                        <div>JARM: <span style="font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 4px; border-radius: 3px;">${r.jarm_hash || 'N/A'}</span></div>
-                    </div>
+            return `
+            <div class="result-card" onclick="showDetail(${idx})" style="cursor: pointer;" data-result='${JSON.stringify(r).replace(/'/g, "&#39;")}'>
+                <div class="result-title">
+                    ${data.title || 'No Title'}
+                    ${wafTag}
                 </div>
-            `).join('');
+                <div style="margin-top: 0.25rem;">${techTags}</div>
+                <div class="result-url">${data.request || 'N/A'}</div>
+                <div class="result-meta">
+                    <div>IP: ${data.ip || 'N/A'} | Port: ${data.port || 'N/A'}</div>
+                    <div>Favicon: <span class="font-mono">${data.favicon_hash || 'N/A'}</span></div>
+                </div>
+            </div>
+        `;
+        }).join('');
+    }
 
-            } catch (e) {
-                console.error(e);
+    // Detail Modal
+    function showDetail(idx) {
+        const cards = document.querySelectorAll('.result-card');
+        const resultData = JSON.parse(cards[idx].dataset.result);
+
+        let content = '';
+
+        // Show all response types
+        const responseTypes = [
+            ['https_responseForIP', 'HTTPS Response (IP)'],
+            ['http_responseForIP', 'HTTP Response (IP)'],
+            ['https_responseForDomainName', 'HTTPS Response (Domain)'],
+            ['http_responseForDomainName', 'HTTP Response (Domain)']
+        ];
+
+        responseTypes.forEach(([key, label]) => {
+            if (resultData[key]) {
+                const data = Array.isArray(resultData[key]) ? resultData[key][0] : resultData[key];
+                if (data) {
+                    content += `
+                    <div class="detail-section">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text-accent);">${label}</h4>
+                        <div class="detail-label">URL</div>
+                        <div class="detail-value">${data.request || 'N/A'}</div>
+                        
+                        <div class="detail-label mt-sm">Title</div>
+                        <div class="detail-value">${data.title || 'N/A'}</div>
+                        
+                        <div class="detail-label mt-sm">IP / Port</div>
+                        <div class="detail-value">${data.ip || 'N/A'}:${data.port || 'N/A'}</div>
+                        
+                        <div class="detail-label mt-sm">Domain</div>
+                        <div class="detail-value">${data.domain || 'N/A'}</div>
+                        
+                        ${data.redirected_url ? `
+                            <div class="detail-label mt-sm">Redirected To</div>
+                            <div class="detail-value">${data.redirected_url}</div>
+                        ` : ''}
+                        
+                        <div class="detail-label mt-sm">Technologies</div>
+                        <div>${(data.technologies || []).map(t => `<span class="tag tag-tech">${t}</span>`).join(' ') || 'None detected'}</div>
+                        
+                        ${data.waf ? `
+                            <div class="detail-label mt-sm">WAF</div>
+                            <div><span class="tag tag-waf">${data.waf}</span></div>
+                        ` : ''}
+                        
+                        <div class="detail-label mt-sm">Favicon Hash</div>
+                        <div class="detail-value">${data.favicon_hash || 'N/A'}</div>
+                        
+                        <div class="detail-label mt-sm">JARM Hash</div>
+                        <div class="detail-value" style="font-size: 0.8rem;">${data.jarm_hash || 'N/A'}</div>
+                        
+                        ${data.response_headers ? `
+                            <div class="detail-label mt-sm">Response Headers</div>
+                            <div class="detail-value" style="font-size: 0.75rem; max-height: 150px; overflow-y: auto;">
+                                ${Object.entries(data.response_headers).map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                }
             }
+        });
+
+        if (!content) {
+            content = '<div style="text-align: center; color: var(--text-muted);">No response data available</div>';
         }
 
-        function stopScan() {
-            document.getElementById('stop-modal').style.display = 'flex';
-            document.getElementById('modal-overlay').style.display = 'block';
+        document.getElementById('detail-content').innerHTML = content;
+        document.getElementById('detail-modal').classList.add('active');
+        document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function closeDetailModal() {
+        document.getElementById('detail-modal').classList.remove('active');
+        document.getElementById('modal-overlay').classList.remove('active');
+    }
+
+    // Modal functions
+    function showStopModal() {
+        document.getElementById('stop-modal').classList.add('active');
+        document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('stop-modal').classList.remove('active');
+        document.getElementById('detail-modal').classList.remove('active');
+        document.getElementById('modal-overlay').classList.remove('active');
+    }
+
+    async function confirmStop(keepData) {
+        closeModal();
+        document.getElementById('phase-badge').innerText = 'Terminating...';
+
+        try {
+            await fetch('/stop_scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ save: keepData })
+            });
+        } catch (e) {
+            console.error('Stop error:', e);
         }
+    }
 
-        function closeModal() {
-            document.getElementById('stop-modal').style.display = 'none';
-            document.getElementById('modal-overlay').style.display = 'none';
+    // Export
+    async function exportResults() {
+        const filename = prompt('Enter filename (e.g. results.json):');
+        if (!filename) return;
+
+        try {
+            await fetch('/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            alert('Export complete!');
+        } catch (e) {
+            alert('Export failed: ' + e);
         }
+    }
 
-        async function confirmStop(keepData) {
-            closeModal();
-            try {
-                // Optimistic UI update
-                document.getElementById('phase-badge').innerText = "Terminating...";
+    // Initialize
+    statusInterval = setInterval(updateStatus, 1000);
+    logInterval = setInterval(fetchLogs, 1500);
+    updateStatus();
+    fetchLogs();
 
-                await fetch('/stop_scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ save: keepData })
-                });
-                alert("Scan stopping...");
-            } catch (e) {
-                alert("Error stopping: " + e);
-            }
-        }
+    // Enter key for search
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') performSearch();
+    });
 
-        async function exportResults() {
-            const filename = prompt("Enter filename (e.g. results.json):");
-            if (filename) {
-                await fetch('/export', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename })
-                });
-                alert("Exported!");
-            }
-        }
-
-        statusInterval = setInterval(updateStatus, 1000);
-        logInterval = setInterval(fetchLogs, 1500);
-        updateStatus();
-    </script>
-    {% endblock %}
+    // Close modal on overlay click
+    document.getElementById('modal-overlay').addEventListener('click', closeModal);
+</script>
+{% endblock %}

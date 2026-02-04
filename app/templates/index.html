@@ -1,97 +1,134 @@
 {% extends "base.html" %}
 
+{% block title %}New Scan - Ri-Scanner Pro{% endblock %}
+
 {% block content %}
-<div style="text-align: center; margin-bottom: 3rem;">
-    <h1
-        style="font-size: 3rem; background: linear-gradient(to right, #fff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-        Start Your Recon</h1>
-    <p style="color: var(--text-muted); font-size: 1.2rem;">Select a method to acquire targets and identify hidden IPs.
-    </p>
+<div class="text-center mb-lg" style="margin-bottom: 3rem;">
+    <h1 class="gradient-text" style="font-size: 3rem; margin-bottom: 0.5rem;">Start Your Recon</h1>
+    <p class="text-muted" style="font-size: 1.2rem;">Select a method to acquire targets and identify hidden
+        infrastructure.</p>
 </div>
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
-
-    <!-- Card 1 -->
-    <div class="glass" style="padding: 2rem;">
-        <h2 style="color: #60a5fa;">1. Full Recon</h2>
-        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Subdomain discovery -> IP Resolution -> ASN
-            Expansion -> Masscan -> Content Discovery.</p>
+<div class="grid-3">
+    <!-- Full Recon Card -->
+    <div class="glass card">
+        <div class="card-header">
+            <h2 style="color: #60a5fa;">1. Full Recon</h2>
+            <p class="card-description">Subdomain discovery → IP Resolution → ASN Expansion → Masscan → Content
+                Discovery.</p>
+        </div>
         <form id="form-recon" onsubmit="startScan(event, 'recon', this)">
-            <label>Target Domain</label>
-            <input type="text" name="domain" placeholder="example.com" required>
+            <div class="form-group">
+                <label class="form-label">Target Domain</label>
+                <input type="text" name="domain" class="form-input" placeholder="example.com" required>
+            </div>
 
-            <label>BGP URL (Optional)</label>
-            <input type="text" name="bgp_url" placeholder="bgp.he.net/...">
+            <div class="form-group">
+                <label class="form-label">BGP URL (Optional)</label>
+                <input type="text" name="bgp_url" class="form-input" placeholder="bgp.he.net/...">
+            </div>
 
-            <label>Masscan Rate</label>
-            <input type="number" name="masscan_rate" value="10000">
+            <div class="form-group">
+                <label class="form-label">Masscan Rate</label>
+                <input type="number" name="masscan_rate" class="form-input" value="10000">
+            </div>
 
-            <label>Chunks (0=Auto)</label>
-            <input type="number" name="masscan_chunks" value="0">
+            <div class="form-group">
+                <label class="form-label">Chunks (0=Auto)</label>
+                <input type="number" name="masscan_chunks" class="form-input" value="0">
+            </div>
 
-            <button type="submit" class="btn" style="width: 100%; background: #2563eb;">Launch Recon</button>
+            <button type="submit" class="btn btn-secondary btn-full">
+                <span class="btn-text">Launch Recon</span>
+                <span class="spinner hidden"></span>
+            </button>
         </form>
     </div>
 
-    <!-- Card 2 -->
-    <div class="glass" style="padding: 2rem;">
-        <h2 style="color: #34d399;">2. From Masscan Result</h2>
-        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Upload an existing masscan result file (-oH format)
-            to extract domains.</p>
+    <!-- Masscan Result Card -->
+    <div class="glass card">
+        <div class="card-header">
+            <h2 style="color: #34d399;">2. From Masscan Result</h2>
+            <p class="card-description">Upload an existing masscan result file (-oH format) to extract domains.</p>
+        </div>
         <form id="form-masscan" onsubmit="startScan(event, 'masscan_file', this)">
-            <label>Masscan Result File</label>
-            <input type="file" name="file" required>
+            <div class="form-group">
+                <label class="form-label">Masscan Result File</label>
+                <input type="file" name="file" class="form-input" required>
+            </div>
 
-            <button type="submit" class="btn" style="width: 100%; background: #059669; margin-top: 1rem;">Process
-                Results</button>
+            <button type="submit" class="btn btn-success btn-full mt-lg">
+                <span class="btn-text">Process Results</span>
+                <span class="spinner hidden"></span>
+            </button>
         </form>
     </div>
 
-    <!-- Card 3 -->
-    <div class="glass" style="padding: 2rem;">
-        <h2 style="color: #fbbf24;">3. From IP List</h2>
-        <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Upload a list of IP ranges or CIDRs. Will run
-            Masscan then Extract.</p>
+    <!-- IP List Card -->
+    <div class="glass card">
+        <div class="card-header">
+            <h2 style="color: #fbbf24;">3. From IP List</h2>
+            <p class="card-description">Upload a list of IP ranges or CIDRs. Will run Masscan then Extract.</p>
+        </div>
         <form id="form-ip" onsubmit="startScan(event, 'ip_file', this)">
-            <label>IP Range File</label>
-            <input type="file" name="file" required>
+            <div class="form-group">
+                <label class="form-label">IP Range File</label>
+                <input type="file" name="file" class="form-input" required>
+            </div>
 
-            <label>Masscan Rate</label>
-            <input type="number" name="masscan_rate" value="10000">
+            <div class="form-group">
+                <label class="form-label">Masscan Rate</label>
+                <input type="number" name="masscan_rate" class="form-input" value="10000">
+            </div>
 
-            <label>Chunks (0=Auto)</label>
-            <input type="number" name="masscan_chunks" value="0">
+            <div class="form-group">
+                <label class="form-label">Chunks (0=Auto)</label>
+                <input type="number" name="masscan_chunks" class="form-input" value="0">
+            </div>
 
-            <button type="submit" class="btn" style="width: 100%; background: #d97706;">Start Scan</button>
+            <button type="submit" class="btn btn-warning btn-full">
+                <span class="btn-text">Start Scan</span>
+                <span class="spinner hidden"></span>
+            </button>
         </form>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
     async function startScan(e, mode, form) {
         e.preventDefault();
         const formData = new FormData(form);
         formData.append('mode', mode);
 
-        // Disable buttons
         const btn = form.querySelector('button');
-        const oldText = btn.innerText;
-        btn.innerText = "Starting...";
+        const btnText = btn.querySelector('.btn-text');
+        const spinner = btn.querySelector('.spinner');
+        const originalText = btnText.innerText;
+
+        btnText.innerText = 'Starting...';
+        spinner.classList.remove('hidden');
         btn.disabled = true;
 
         try {
             const res = await fetch('/start_scan', { method: 'POST', body: formData });
             const data = await res.json();
+
             if (data.status === 'started') {
                 window.location.href = '/dashboard';
             } else {
-                alert("Error: " + JSON.stringify(data));
-                btn.innerText = oldText;
-                btn.disabled = false;
+                alert('Error: ' + JSON.stringify(data));
+                resetButton();
             }
         } catch (err) {
-            alert("Request Failed: " + err);
-            btn.innerText = oldText;
+            alert('Request Failed: ' + err);
+            resetButton();
+        }
+
+        function resetButton() {
+            btnText.innerText = originalText;
+            spinner.classList.add('hidden');
             btn.disabled = false;
         }
     }

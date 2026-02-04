@@ -66,7 +66,7 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
         import multiprocessing
         try:
             cpu_count = multiprocessing.cpu_count()
-        except:
+        except (NotImplementedError, OSError):
             cpu_count = 4
         # Heuristic: Use CPU count as baseline, but ensure at least 1 chunk and cap at 50 to avoid overhead
         num_chunks = max(1, min(total_ranges, cpu_count * 2, 50))
@@ -99,8 +99,9 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
             import urllib.request
             data = json.dumps({"chunk_update": {"id": idx, "status": "running"}}).encode('utf-8')
             req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
-            urllib.request.urlopen(req)
-        except: pass
+            urllib.request.urlopen(req, timeout=2)
+        except Exception:
+            pass
 
         cmd = f"sudo masscan -p443 --rate {config.masscan_rate} --wait 0 -iL '{input_path}' -oH '{output_path}'"
         try:
@@ -109,7 +110,14 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
              subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=None) 
         except subprocess.TimeoutExpired:
             pass
-        except Exception:
+        except Exception as e:
+            pass
+        
+        # Cleanup input file immediately to save space/inodes
+        try:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+        except OSError:
             pass
         
         # Notify Completed
@@ -117,10 +125,11 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
             import urllib.request
             data = json.dumps({"chunk_update": {"id": idx, "status": "completed"}}).encode('utf-8')
             req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
-            urllib.request.urlopen(req)
-        except: pass
+            urllib.request.urlopen(req, timeout=2)
+        except Exception:
+            pass
 
-    log_event(f"[*] Running {len(temp_files)} Masscan instances concurrently...")
+    log_event(f"[*] Running {len(temp_files)} Masscan instances concurrently (Unlimited)...")
     total_chunks = len(temp_files)
     completed_chunks = 0
     completed_ranges = 0
@@ -141,8 +150,8 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
         urllib.request.urlopen(req)
     except: pass
     
-    # Limit Concurrency to ensure progress bar updates (chunks finish sequentially) and reduce load
-    max_masscan_workers = min(len(temp_files), 4)
+    # Restore High Concurrency - No Limits as requested
+    max_masscan_workers = len(temp_files)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_masscan_workers) as executor:
         future_to_index = {executor.submit(run_single_masscan, temp_files[i], temp_results[i], i): i for i in range(len(temp_files))}
@@ -154,39 +163,36 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
                     break
                 idx = future_to_index[future]
                 completed_chunks += 1
-            completed_ranges += chunk_counts[idx]
-            
-            # Calculate ETR
-            elapsed = time.time() - start_time
-            etr_str = "Calculating..."
-            if completed_chunks > 0:
-                avg_chunk_time = elapsed / completed_chunks
-                remaining_chunks = total_chunks - completed_chunks
-                etr_seconds = remaining_chunks * avg_chunk_time
-                if etr_seconds > 60:
-                    etr_str = f"{int(etr_seconds // 60)}m {int(etr_seconds % 60)}s"
-                else:
-                    etr_str = f"{int(etr_seconds)}s"
+                completed_ranges += chunk_counts[idx]
+                
+                # Calculate ETR
+                elapsed = time.time() - start_time
+                etr_str = "Calculating..."
+                if completed_chunks > 0:
+                    avg_chunk_time = elapsed / completed_chunks
+                    remaining_chunks = total_chunks - completed_chunks
+                    etr_seconds = remaining_chunks * avg_chunk_time
+                    if etr_seconds > 60:
+                        etr_str = f"{int(etr_seconds // 60)}m {int(etr_seconds % 60)}s"
+                    else:
+                        etr_str = f"{int(etr_seconds)}s"
 
-            # We can update server status here using a helper or requests
-            # For simplicity, we rely on the server.py endpoints to update status if called from there,
-            # or we can use the requests method used in main.py previously.
-            # Since this is now imported by server.py, we can potentially access scan_status directly if we pass it,
-            # but to keep it decoupled, let's use the HTTP update method which works even if threaded.
-            try:
-                import urllib.request
-                data = json.dumps({
-                    "masscan_progress": completed_chunks,
-                    "masscan_total": total_chunks,
-                    "masscan_ranges_done": completed_ranges,
-                    "masscan_ranges_total": total_ranges,
-                    "estimated_remaining": etr_str
-                }).encode('utf-8')
-                req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
-                urllib.request.urlopen(req)
-            except: pass
-            
-            log_event(f"Masscan Chunk {idx+1}/{total_chunks} finished")
+                # Update server status for dashboard
+                try:
+                    import urllib.request
+                    data = json.dumps({
+                        "masscan_progress": completed_chunks,
+                        "masscan_total": total_chunks,
+                        "masscan_ranges_done": completed_ranges,
+                        "masscan_ranges_total": total_ranges,
+                        "estimated_remaining": etr_str
+                    }).encode('utf-8')
+                    req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
+                    urllib.request.urlopen(req, timeout=2)
+                except Exception:
+                    pass
+                
+                log_event(f"Masscan Chunk {idx+1}/{total_chunks} finished")
         except Exception as e:
             log_event(f"[!] Masscan Thread Error: {e}")
 
@@ -238,8 +244,9 @@ async def extract_domains(config, stop_event=None):
             import urllib.request
             urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5000/update_status", 
                 data=json.dumps({"phase": "Extraction", "extraction_total": total_ips, "extraction_progress": 0, "found_count": 0, "estimated_remaining": "Calculating..."}).encode('utf-8'), 
-                headers={'Content-Type': 'application/json'}))
-        except: pass
+                headers={'Content-Type': 'application/json'}), timeout=2)
+        except Exception:
+            pass
 
         active_tasks = 0
         
@@ -295,19 +302,24 @@ async def extract_domains(config, stop_event=None):
                             "active_threads": active_tasks,
                             "estimated_remaining": etr_str
                         }).encode('utf-8'), 
-                        headers={'Content-Type': 'application/json'}))
-                except: pass
+                        headers={'Content-Type': 'application/json'}), timeout=2)
+                except Exception:
+                    pass
 
             if len(batch_results) >= 50:
                 try:
-                    async with session.post(config.server_url, data=json.dumps(batch_results), headers={"Content-Type": "application/json"}, ssl=False) as res: pass
-                except: pass
+                    async with session.post(config.server_url, data=json.dumps(batch_results), headers={"Content-Type": "application/json"}, ssl=False) as res:
+                        pass
+                except aiohttp.ClientError:
+                    pass
                 batch_results = []
 
         if batch_results:
             try:
-                async with session.post(config.server_url, data=json.dumps(batch_results), headers={"Content-Type": "application/json"}, ssl=False) as res: pass
-            except: pass
+                async with session.post(config.server_url, data=json.dumps(batch_results), headers={"Content-Type": "application/json"}, ssl=False) as res:
+                    pass
+            except aiohttp.ClientError:
+                pass
 
     log_event("[*] Extraction completed.")
 

@@ -210,4 +210,115 @@ def search_title():
         print(e)
         return jsonify({"error": str(e)}), 500
 
-# Add other search endpoints as needed (IP, Domain, etc.) similar to above
+
+@main_bp.route("/search/advanced", methods=["POST"])
+def search_advanced():
+    """
+    Advanced search with filters.
+    
+    Request body:
+    {
+        "filters": [
+            {"field": "title", "operator": "contains", "value": "login"},
+            {"field": "waf", "operator": "equals", "value": "Cloudflare"},
+            {"field": "ip", "operator": "not_contains", "value": "192.168"}
+        ]
+    }
+    
+    Operators: equals, not_equals, contains, not_contains
+    Fields: title, ip, domain, waf, technologies, port, jarm_hash, favicon_hash
+    """
+    try:
+        data = request.get_json() or {}
+        filters = data.get("filters", [])
+        
+        if not filters:
+            # Return recent results if no filters
+            results = list(current_app.db["sslchecker"].find({}, {"_id": 0}).sort("_id", -1).limit(50))
+            return jsonify(results)
+        
+        # Build MongoDB query from filters
+        query_conditions = []
+        
+        for f in filters:
+            field = f.get("field", "").strip()
+            operator = f.get("operator", "contains")
+            value = f.get("value", "").strip()
+            
+            if not field or not value:
+                continue
+            
+            # Map field names to possible document paths
+            field_paths = _get_field_paths(field)
+            
+            # Build condition based on operator
+            if operator == "equals":
+                condition = {"$or": [{path: value} for path in field_paths]}
+            elif operator == "not_equals":
+                condition = {"$and": [{path: {"$ne": value}} for path in field_paths]}
+            elif operator == "contains":
+                regex = Regex(rf".*{re.escape(value)}.*", "i")
+                condition = {"$or": [{path: regex} for path in field_paths]}
+            elif operator == "not_contains":
+                regex = Regex(rf".*{re.escape(value)}.*", "i")
+                condition = {"$and": [{path: {"$not": regex}} for path in field_paths]}
+            else:
+                continue
+            
+            query_conditions.append(condition)
+        
+        # Combine all conditions with AND
+        if query_conditions:
+            db_query = {"$and": query_conditions}
+        else:
+            db_query = {}
+        
+        results = list(current_app.db["sslchecker"].find(db_query, {"_id": 0}).limit(200))
+        return jsonify(results)
+        
+    except Exception as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+
+def _get_field_paths(field: str) -> list:
+    """Map a field name to its possible paths in the document."""
+    base_paths = [
+        "http_responseForIP",
+        "https_responseForIP", 
+        "http_responseForDomainName",
+        "https_responseForDomainName"
+    ]
+    
+    # Some fields need nested access, some are at list level
+    if field in ["title", "ip", "domain", "port", "jarm_hash", "favicon_hash", "waf", "request", "redirected_url"]:
+        paths = []
+        for base in base_paths:
+            paths.append(f"{base}.{field}")
+            # Also check if it's an array (http can return multiple ports)
+            paths.append(f"{base}.0.{field}")
+        return paths
+    elif field == "technologies":
+        # Technologies is an array field
+        paths = []
+        for base in base_paths:
+            paths.append(f"{base}.technologies")
+            paths.append(f"{base}.0.technologies")
+        return paths
+    else:
+        return [field]
+
+
+@main_bp.route("/result/<result_id>", methods=["GET"])
+def get_result_detail(result_id):
+    """Get full details for a specific result."""
+    try:
+        from bson import ObjectId
+        result = current_app.db["sslchecker"].find_one({"_id": ObjectId(result_id)})
+        if result:
+            result["_id"] = str(result["_id"])
+            return jsonify(result)
+        return jsonify({"error": "Not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+

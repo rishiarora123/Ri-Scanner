@@ -1,113 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Antigravity Scanner</title>
+    <meta name="description" content="Ri-Scanner Pro - Professional Security Reconnaissance Tool">
+    <meta name="theme-color" content="#7c3aed">
+    <title>{% block title %}Ri-Scanner Pro{% endblock %}</title>
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-color: #050505;
-            --card-bg: rgba(20, 20, 20, 0.6);
-            --primary: #7c3aed; /* Violet */
-            --primary-glow: rgba(124, 58, 237, 0.4);
-            --text-main: #e5e5e5;
-            --text-muted: #a3a3a3;
-            --border-color: rgba(255, 255, 255, 0.1);
-            --glass-border: 1px solid rgba(255, 255, 255, 0.05);
-        }
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            font-family: 'Inter', sans-serif;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(124, 58, 237, 0.08), transparent 25%), 
-                radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 25%);
-        }
+    <!-- Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
-        .glass {
-            background: var(--card-bg);
-            border: var(--glass-border);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-
-        .btn {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .btn:hover {
-            box-shadow: 0 0 15px var(--primary-glow);
-            transform: translateY(-1px);
-        }
-        
-        input[type="text"], input[type="number"], input[type="file"] {
-            background: rgba(0,0,0,0.3);
-            border: 1px solid var(--border-color);
-            color: white;
-            padding: 0.5rem;
-            border-radius: 6px;
-            width: 100%;
-            box-sizing: border-box;
-            margin-bottom: 1rem;
-        }
-
-        h1, h2, h3 { font-weight: 700; letter-spacing: -0.025em; }
-        
-        .navbar {
-            padding: 1rem 2rem;
-            border-bottom: 1px solid var(--border-color);
-            background: rgba(5, 5, 5, 0.8);
-            backdrop-filter: blur(10px);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .logo { font-size: 1.25rem; font-weight: 700; color: white; text-decoration: none; }
-    </style>
+    {% block head %}{% endblock %}
 </head>
+
 <body>
     <nav class="navbar">
-        <a href="/" class="logo">ReconScanner Pro</a>
-        <div>
-            <a href="/" style="color:white; margin-right:1rem; text-decoration:none;">New Scan</a>
-            <a href="/dashboard" style="color:white; text-decoration:none;">Dashboard</a>
+        <a href="/" class="logo">Ri-Scanner Pro</a>
+        <div class="nav-links flex gap-md">
+            <a href="/" class="{% if request.endpoint == 'main.home' %}active{% endif %}">New Scan</a>
+            <a href="/dashboard" class="{% if request.endpoint == 'main.dashboard' %}active{% endif %}">Dashboard</a>
         </div>
     </nav>
 
-    <div class="container">
+    <main class="container">
         {% block content %}{% endblock %}
-    </div>
+    </main>
 
     <script>
-        // Common JS
+        // Global utilities
+        const $ = (sel) => document.querySelector(sel);
+        const $$ = (sel) => document.querySelectorAll(sel);
     </script>
+    {% block scripts %}{% endblock %}
 </body>
+
 </html>
