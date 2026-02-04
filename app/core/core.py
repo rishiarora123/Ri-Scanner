@@ -136,11 +136,37 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
 
         cmd = f"sudo masscan -p443 --rate {config.masscan_rate} --wait 0 -iL '{input_path}' -oH '{output_path}'"
         try:
-             subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=None) 
-        except subprocess.TimeoutExpired:
-            pass
+             # Use Popen to capture progress output if possible
+             # Masscan usually outputs progress to stderr
+             process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+             
+             # Read stderr for progress lines
+             while True:
+                 line = process.stderr.readline()
+                 if not line and process.poll() is not None:
+                     break
+                 
+                 # Look for progress like " 13.52% done"
+                 if "done" in line and "%" in line:
+                     try:
+                         # Extract percentage
+                         pct_match = re.search(r"(\d+\.\d+)%", line)
+                         if pct_match:
+                             pct = float(pct_match.group(1))
+                             processed = int((pct / 100.0) * chunk_info.get("total", 0))
+                             
+                             # Send update
+                             update_data = {"id": idx, "processed": processed}
+                             data = json.dumps({"chunk_update": update_data}).encode('utf-8')
+                             req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
+                             urllib.request.urlopen(req, timeout=1)
+                     except Exception:
+                         pass
+             
+             process.wait()
         except Exception as e:
-            pass
+            if "gaierror" not in str(e).lower():
+                log_event(f"[!] Masscan Chunk {idx} error: {e}")
         
         # Cleanup input file immediately to save space/inodes
         try:

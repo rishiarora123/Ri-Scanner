@@ -206,6 +206,9 @@
             return `
             <div class="result-card" onclick="showDetail(${idx})" style="cursor: pointer;" data-result='${JSON.stringify(r).replace(/'/g, "&#39;")}'>
                 <div class="result-title">
+                    <span class="tag ${data.status_code >= 200 && data.status_code < 300 ? 'tag-tech' : (data.status_code >= 300 && data.status_code < 400 ? 'tag-waf' : 'tag-danger')}" style="margin-right: 0.5rem; border: 1px solid rgba(255,255,255,0.1)">
+                        ${data.status_code || '???'}
+                    </span>
                     ${data.title || 'No Title'}
                     ${domainBadge}
                     ${wafTag}
@@ -289,6 +292,7 @@
             <option value="port">Port</option>
             <option value="jarm_hash">JARM Hash</option>
             <option value="favicon_hash">Favicon Hash</option>
+            <option value="status_code">Status Code</option>
         </select>
         <select class="filter-operator">
             <option value="contains">Contains</option>
@@ -384,6 +388,8 @@
                         ${data.waf ? `<div class="detail-label mt-sm">WAF</div><div><span class="tag tag-waf">${data.waf}</span></div>` : ''}
                         <div class="detail-label mt-sm">Favicon Hash</div>
                         <div class="detail-value">${data.favicon_hash || 'N/A'}</div>
+                        <div class="detail-label mt-sm">Status Code</div>
+                        <div class="detail-value"><span class="tag ${data.status_code >= 200 && data.status_code < 300 ? 'tag-tech' : 'tag-waf'}">${data.status_code || 'N/A'}</span></div>
                         <div class="detail-label mt-sm">JARM Hash</div>
                         <div class="detail-value" style="font-size: 0.8rem;">${data.jarm_hash || 'N/A'}</div>
                         ${data.response_headers ? `

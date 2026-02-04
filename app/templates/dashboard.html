@@ -229,11 +229,10 @@
         const container = document.getElementById('chunk-list');
 
         if (activeChunks.length === 0) {
+            const hasCompleted = chunks.some(c => c.status === 'completed');
             container.innerHTML = `
             <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.85rem;">
-                ${chunks.length > 0 && chunks.every(c => c.status === 'completed')
-                    ? 'All chunks completed!'
-                    : 'No active chunks'}
+                ${hasCompleted ? 'All chunks completed!' : 'Waiting for chunks...'}
             </div>
         `;
             return;
@@ -259,7 +258,7 @@
                         <span>${chunk.last_range || 'N/A'}</span>
                     </div>
                     <div class="chunk-detail-row">
-                        <span>Total IPs:</span>
+                        <span>Total Ranges:</span>
                         <span>${chunk.total || 0}</span>
                     </div>
                     <div class="chunk-detail-row">
@@ -268,7 +267,7 @@
                     </div>
                     <div class="chunk-detail-row">
                         <span>Remaining:</span>
-                        <span>${(chunk.total || 0) - (chunk.processed || 0)}</span>
+                        <span>${Math.max(0, (chunk.total || 0) - (chunk.processed || 0))}</span>
                     </div>
                     <div class="chunk-progress">
                         <div class="chunk-progress-fill" style="width: ${progressPct}%;"></div>

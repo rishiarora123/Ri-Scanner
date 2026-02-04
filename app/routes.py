@@ -225,6 +225,8 @@ def search_title():
                     {"http_responseForIP.domain": regex},
                     {"https_responseForIP.domain": regex},
                     {"http_responseForIP.ip": regex},
+                    {"http_responseForIP.port": regex},
+                    {"https_responseForIP.port": regex},
                 ]
             }
             total = current_app.db["sslchecker"].count_documents(db_query)
@@ -324,7 +326,7 @@ def _get_field_paths(field: str) -> list:
     ]
     
     # Some fields need nested access, some are at list level
-    if field in ["title", "ip", "domain", "port", "jarm_hash", "favicon_hash", "waf", "request", "redirected_url"]:
+    if field in ["title", "ip", "domain", "port", "jarm_hash", "favicon_hash", "waf", "request", "redirected_url", "status_code"]:
         paths = []
         for base in base_paths:
             paths.append(f"{base}.{field}")

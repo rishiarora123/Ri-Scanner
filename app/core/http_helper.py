@@ -19,28 +19,65 @@ from .jarm_helper import get_jarm_hash
 # Pre-compiled strainer for HTML parsing (reuse for performance)
 _HTML_STRAINER = SoupStrainer(["title", "body"])
 
-# Technology detection signatures
+# Technology detection signatures (Expanded)
 TECH_SIGNATURES = {
     "header": {
-        "PHP": ["PHP"],
-        "ASP.NET": ["ASP.NET"],
+        "PHP": ["PHP", "X-PHP-Originating-Script"],
+        "ASP.NET": ["ASP.NET", "X-AspNet-Version"],
         "Express.js": ["Express"],
         "Nginx": ["nginx"],
-        "Apache": ["apache"],
+        "Apache": ["apache", "Httpd"],
         "Cloudflare CDN": ["cloudflare"],
         "IIS": ["microsoft-iis"],
+        "Django": ["csrftoken"],
+        "Litespeed": ["litespeed"],
+        "Next.js": ["x-nextjs-cache", "x-powered-by: next.js"],
+        "Nuxt.js": ["x-nuxt-cache"],
+        "Varnish": ["varnish"],
+        "Fastly": ["fastly"],
+        "Netlify": ["netlify"],
+        "OpenResty": ["openresty"],
+        "Phusion Passenger": ["phusion_passenger"],
+        "Envoy": ["envoy"],
     },
     "body": {
-        "WordPress": ["wordpress", "wp-content"],
-        "React": ["react", "_reactroot"],
-        "Vue.js": ["vue", "__vue__"],
-        "Bootstrap": ["bootstrap"],
-        "jQuery": ["jquery"],
-        "Angular": ["ng-app", "angular"],
+        # CMS
+        "WordPress": ["wordpress", "wp-content", "wp-includes", "wp-json"],
+        "Drupal": ["drupal", "sites/all", "Drupal.settings"],
+        "Joomla": ["joomla", "Joomla!"],
+        "Ghost": ["ghost-org", "ghost.io"],
+        "Strapi": ["strapi"],
+        "Magento": ["magento", "Mage.Cookies"],
+        "Shopify": ["shopify", "shopify-checkout"],
+        
+        # Frameworks & Libraries
+        "React": ["react", "_reactroot", "react-dom"],
+        "Vue.js": ["vue", "__vue__", "vue.js"],
+        "Angular": ["ng-app", "angular", "_ngcontent", "_nghost"],
+        "Svelte": ["svelte-"],
+        "Alpine.js": ["x-data=", "alpine.js"],
+        "Bootstrap": ["bootstrap.css", "bootstrap.min.css", "bootstrap.js"],
+        "Tailwind CSS": ["tailwind", "tw-"],
+        "jQuery": ["jquery", "jquery.min.js"],
+        "D3.js": ["d3.js", "d3.min.js"],
+        "Three.js": ["three.js", "three.min.js"],
+        
+        # Analytics & Tracking
+        "Google Analytics": ["googletagmanager", "google-analytics.com", "UA-"],
+        "Facebook Pixel": ["facebook.net/en_US/fbevents.js", "fbq("],
+        "Hotjar": ["hotjar-"],
+        "HubSpot": ["hubspot"],
+        "Mixpanel": ["mixpanel"],
+        
+        # Misc
+        "Google Fonts": ["fonts.googleapis.com"],
+        "Font Awesome": ["font-awesome", "fontawesome"],
+        "Recaptcha": ["google.com/recaptcha"],
+        "Cloudflare": ["/cdn-cgi/"],
     }
 }
 
-# WAF detection signatures
+# WAF detection signatures (Expanded)
 WAF_SIGNATURES = [
     ("cloudflare", "cookie:__cfduid", "Cloudflare"),
     ("cloudflare", "server:cloudflare", "Cloudflare"),
@@ -50,6 +87,12 @@ WAF_SIGNATURES = [
     ("akamai", "via:akamai", "Akamai"),
     ("incapsula", "cookie:incap_ses", "Imperva Incapsula"),
     ("sucuri", "server:sucuri", "Sucuri"),
+    ("mod_security", "server:mod_security", "ModSecurity"),
+    ("comodo", "server:comodo", "Comodo WAF"),
+    ("barracuda", "cookie:barra_counter_sd", "Barracuda WAF"),
+    ("f5bigip", "cookie:bigipserver", "F5 BIG-IP"),
+    ("fortinet", "server:fortiweb", "FortiWeb"),
+    ("radware", "server:radware", "Radware"),
 ]
 
 
@@ -74,13 +117,14 @@ async def get_favicon_hash(
         async with session.get(
             favicon_url, 
             timeout=aiohttp.ClientTimeout(total=timeout), 
-            ssl=False
+            ssl=False,
+            allow_redirects=True
         ) as resp:
             if resp.status == 200:
                 favicon = await resp.read()
                 if len(favicon) > 0:
                     return mmh3.hash(codecs.encode(favicon, "base64"))
-    except (aiohttp.ClientError, asyncio.TimeoutError):
+    except Exception:
         pass
     return None
 
@@ -89,13 +133,16 @@ def _detect_technologies(headers: Dict[str, str], body_text: str) -> Set[str]:
     """Detect technologies from response headers and body."""
     technologies = set()
     
-    # Check headers
-    server = headers.get("Server", "").lower()
-    powered_by = headers.get("X-Powered-By", "")
+    # Normalize headers for case-insensitive matching
+    headers_lower = {k.lower(): v.lower() for k, v in headers.items()}
+    server = headers_lower.get("server", "")
+    powered_by = headers_lower.get("x-powered-by", "")
     
+    # Check headers
     for tech, signatures in TECH_SIGNATURES["header"].items():
         for sig in signatures:
-            if sig.lower() in server or sig in powered_by:
+            sig_lower = sig.lower()
+            if sig_lower in server or sig_lower in powered_by:
                 technologies.add(tech)
                 break
     
@@ -103,10 +150,10 @@ def _detect_technologies(headers: Dict[str, str], body_text: str) -> Set[str]:
     body_lower = body_text.lower()
     for tech, signatures in TECH_SIGNATURES["body"].items():
         for sig in signatures:
-            if sig in body_lower:
+            if sig.lower() in body_lower:
                 technologies.add(tech)
                 break
-    
+                
     return technologies
 
 
@@ -152,7 +199,8 @@ async def _parse_response(
             response = await res.text(encoding="utf-8", errors="replace")
             content_type = res.headers.get("Content-Type", "")
             
-            # Extract headers
+            # Extract headers and status
+            status_code = res.status
             response_headers = {
                 k: v.encode("utf-8", "surrogatepass").decode("utf-8")
                 for k, v in res.headers.items()
@@ -229,17 +277,18 @@ async def _parse_response(
                 "favicon_hash": fav_hash,
                 "jarm_hash": jarm_hash,
                 "technologies": list(technologies),
-                "waf": waf
+                "waf": waf,
+                "status_code": status_code
             }
             
     except ET.ParseError as e:
         log_to_server(f"XML Parse Error for {url}: {e}")
-    except asyncio.TimeoutError:
-        pass  # Timeout is expected, silent
-    except aiohttp.ClientError:
-        pass  # Connection errors are expected
+    except (asyncio.TimeoutError, aiohttp.ClientError):
+        pass  # Connection/Timeout errors are expected
     except Exception as e:
-        log_to_server(f"HTTP Error for {url}: {e}")
+        # Ignore gaierror specifically if it leaks through
+        if "gaierror" not in str(e).lower():
+            log_to_server(f"HTTP Error for {url}: {e}")
     
     return None
 
