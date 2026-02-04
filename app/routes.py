@@ -20,7 +20,7 @@ scan_status = {
     "masscan_total": 0,
     "masscan_ranges_done": 0,
     "masscan_ranges_total": 0,
-    "masscan_chunks_status": [],
+    "masscan_chunks_status": [],  # List of {id, status, ip_ranges, total, processed}
     "extraction_progress": 0,
     "extraction_total": 0,
     "found_count": 0,
@@ -129,9 +129,22 @@ def update_status_route():
         if "chunk_update" in data:
             update = data.pop("chunk_update")
             idx = update.get("id")
-            status = update.get("status")
-            if idx is not None and "masscan_chunks_status" in scan_status and 0 <= idx < len(scan_status["masscan_chunks_status"]):
-                scan_status["masscan_chunks_status"][idx]["status"] = status
+            
+            if idx is not None and "masscan_chunks_status" in scan_status:
+                # Find existing chunk or create placeholder
+                existing = None
+                for chunk in scan_status["masscan_chunks_status"]:
+                    if chunk.get("id") == idx:
+                        existing = chunk
+                        break
+                
+                if existing:
+                    # Update existing chunk with new data
+                    for k, v in update.items():
+                        existing[k] = v
+                else:
+                    # Add new chunk
+                    scan_status["masscan_chunks_status"].append(update)
         
         # Merge dicts
         for k, v in data.items():

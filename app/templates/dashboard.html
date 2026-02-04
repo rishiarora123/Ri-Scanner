@@ -3,7 +3,7 @@
 {% block title %}Dashboard - Ri-Scanner Pro{% endblock %}
 
 {% block content %}
-<div style="display: grid; grid-template-columns: 320px 1fr; gap: 2rem;">
+<div style="display: grid; grid-template-columns: 350px 1fr; gap: 2rem;">
     <!-- Sidebar / Stats -->
     <aside class="glass card" style="height: fit-content; position: sticky; top: 100px;">
         <h3 style="margin-top: 0; margin-bottom: 1rem;">Scan Status</h3>
@@ -26,12 +26,16 @@
             </div>
         </div>
 
-        <!-- Chunk Grid -->
-        <div style="margin-bottom: 1rem;">
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Chunks Status:</div>
-            <div id="chunk-grid" class="chunk-grid">
-                <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 0.5rem;">
-                    Waiting...</div>
+        <!-- Active Chunks Section -->
+        <div style="margin: 1rem 0;">
+            <div class="flex-between" style="margin-bottom: 0.5rem;">
+                <span style="font-size: 0.85rem; font-weight: 600;">Active Chunks</span>
+                <span id="active-chunk-count" style="font-size: 0.75rem; color: var(--text-muted);">0 running</span>
+            </div>
+            <div id="chunk-list" style="max-height: 250px; overflow-y: auto;">
+                <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.85rem;">
+                    No active chunks
+                </div>
             </div>
         </div>
 
@@ -62,49 +66,13 @@
         <button onclick="showStopModal()" class="btn btn-danger btn-full mt-lg">Stop Scan</button>
     </aside>
 
-    <!-- Main Content -->
-    <div>
-        <!-- Tabs -->
-        <div class="tabs">
-            <div onclick="showTab('logs')" class="tab-btn active" data-tab="logs">Live Logs</div>
-            <div onclick="showTab('results')" class="tab-btn" data-tab="results">Results Search</div>
+    <!-- Main Content - Logs -->
+    <div class="glass card" style="padding: 0; height: 600px; display: flex; flex-direction: column;">
+        <div style="padding: 1rem; border-bottom: 1px solid var(--glass-border);">
+            <h3 style="margin: 0;">Live Logs</h3>
         </div>
-
-        <!-- Logs Tab -->
-        <div id="tab-logs" class="glass tab-content active" style="padding: 0;">
-            <div id="log-container" class="log-container">
-                <div class="log-entry">Initializing dashboard...</div>
-            </div>
-        </div>
-
-        <!-- Results Tab -->
-        <div id="tab-results" class="glass tab-content" style="padding: 1rem;">
-            <!-- Quick Search -->
-            <div class="flex gap-sm mb-md">
-                <input type="text" id="search-input" class="form-input" style="margin-bottom: 0; flex: 1;"
-                    placeholder="Quick search...">
-                <button class="btn btn-primary" onclick="performSearch()">Search</button>
-                <button class="btn btn-outline" onclick="toggleFilters()">Filters</button>
-                <button class="btn btn-success" onclick="exportResults()">Export</button>
-            </div>
-
-            <!-- Advanced Filters -->
-            <div id="filters-panel" class="glass-solid mb-md hidden" style="padding: 1rem;">
-                <div class="flex-between mb-sm">
-                    <h4 style="margin: 0;">Advanced Filters</h4>
-                    <button class="btn btn-outline" onclick="addFilter()"
-                        style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">+ Add Filter</button>
-                </div>
-                <div id="filters-container">
-                    <!-- Filters will be added here -->
-                </div>
-                <div class="flex gap-sm mt-md">
-                    <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
-                    <button class="btn btn-outline" onclick="clearFilters()">Clear All</button>
-                </div>
-            </div>
-
-            <div id="results-container" style="flex: 1; overflow-y: auto; max-height: 600px;"></div>
+        <div id="log-container" class="log-container" style="flex: 1;">
+            <div class="log-entry">Initializing dashboard...</div>
         </div>
     </div>
 </div>
@@ -120,99 +88,95 @@
     </div>
     <button onclick="closeModal()" class="btn btn-outline btn-full mt-md">Cancel</button>
 </div>
-
-<!-- Result Detail Modal -->
-<div id="detail-modal" class="glass modal" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
-    <div class="flex-between mb-md">
-        <h3 class="modal-title" style="margin: 0;">Result Details</h3>
-        <button onclick="closeDetailModal()" class="btn btn-outline" style="padding: 0.25rem 0.5rem;">✕</button>
-    </div>
-    <div id="detail-content">Loading...</div>
-</div>
 {% endblock %}
 
 {% block scripts %}
 <style>
-    .filter-row {
-        display: grid;
-        grid-template-columns: 1fr 140px 1fr auto;
-        gap: 0.5rem;
+    .chunk-item {
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        border-radius: var(--radius-sm);
+        padding: 0.5rem 0.75rem;
         margin-bottom: 0.5rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .chunk-item:hover {
+        background: rgba(16, 185, 129, 0.25);
+        border-color: rgba(16, 185, 129, 0.5);
+    }
+
+    .chunk-item.expanded {
+        background: rgba(16, 185, 129, 0.2);
+    }
+
+    .chunk-header {
+        display: flex;
+        justify-content: space-between;
         align-items: center;
     }
 
-    .filter-row select,
-    .filter-row input {
-        padding: 0.5rem;
-        background: rgba(0, 0, 0, 0.3);
-        border: 1px solid var(--glass-border);
-        border-radius: var(--radius-sm);
-        color: var(--text-primary);
+    .chunk-id {
+        font-weight: 600;
+        color: var(--success);
         font-size: 0.9rem;
     }
 
-    .filter-remove {
-        background: transparent;
-        border: none;
-        color: var(--danger);
-        cursor: pointer;
-        font-size: 1.2rem;
-        padding: 0.25rem;
-    }
-
-    .detail-section {
-        margin-bottom: 1rem;
-        padding: 0.75rem;
-        background: rgba(0, 0, 0, 0.2);
-        border-radius: var(--radius-sm);
-    }
-
-    .detail-label {
-        font-size: 0.75rem;
-        color: var(--text-muted);
+    .chunk-status {
+        font-size: 0.7rem;
         text-transform: uppercase;
-        margin-bottom: 0.25rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--success);
+        color: white;
+        animation: pulse 1.5s ease-in-out infinite;
     }
 
-    .detail-value {
+    .chunk-details {
+        display: none;
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 0.8rem;
+    }
+
+    .chunk-item.expanded .chunk-details {
+        display: block;
+    }
+
+    .chunk-detail-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.25rem;
+        color: var(--text-secondary);
+    }
+
+    .chunk-detail-row span:last-child {
+        color: var(--text-primary);
         font-family: 'JetBrains Mono', monospace;
-        word-break: break-all;
+        font-size: 0.75rem;
+    }
+
+    .chunk-progress {
+        height: 4px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 2px;
+        margin-top: 0.5rem;
+        overflow: hidden;
+    }
+
+    .chunk-progress-fill {
+        height: 100%;
+        background: var(--success);
+        transition: width 0.3s ease;
     }
 </style>
 
 <script>
-    // Dashboard state
     let logInterval, statusInterval;
     let lastLogCount = 0;
-    let filtersVisible = false;
-    let filterCount = 0;
-
-    // Utility functions
-    function getChunkColor(status) {
-        const colors = {
-            'completed': 'var(--success)',
-            'running': 'var(--secondary)',
-            'pending': 'rgba(255, 255, 255, 0.1)'
-        };
-        return colors[status] || colors.pending;
-    }
-
-    function getChunkClass(status) {
-        return `chunk-cell ${status || 'pending'}`;
-    }
-
-    // Tab switching
-    function showTab(tab) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-
-        document.getElementById(`tab-${tab}`).classList.add('active');
-        document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-
-        if (tab === 'results' && !document.getElementById('results-container').innerHTML.trim()) {
-            performSearch();
-        }
-    }
+    let expandedChunks = new Set();
 
     // Status updates
     async function updateStatus() {
@@ -220,6 +184,7 @@
             const res = await fetch('/get_status');
             const data = await res.json();
 
+            // Phase badge
             const badge = document.getElementById('phase-badge');
             badge.innerText = data.phase;
             badge.className = 'phase-badge';
@@ -227,42 +192,98 @@
             else if (data.phase.includes('Extraction')) badge.classList.add('extracting');
             else if (data.phase === 'Idle') badge.classList.add('idle');
 
+            // Masscan progress
             const mPct = data.masscan_total > 0 ? (data.masscan_progress / data.masscan_total * 100) : 0;
             document.getElementById('masscan-bar').style.width = `${mPct}%`;
             document.getElementById('masscan-txt').innerText = `${Math.round(mPct)}%`;
 
+            // Ranges & ETA
             document.getElementById('masscan-ranges').innerText =
                 `Ranges: ${data.masscan_ranges_done || 0} / ${data.masscan_ranges_total || 0}`;
             document.getElementById('masscan-eta').innerText =
                 `ETA: ${data.estimated_remaining || '--'}`;
 
-            const grid = document.getElementById('chunk-grid');
-            if (data.masscan_chunks_status && data.masscan_chunks_status.length > 0) {
-                if (grid.children.length !== data.masscan_chunks_status.length) {
-                    grid.innerHTML = data.masscan_chunks_status.map(c =>
-                        `<div class="${getChunkClass(c.status)}" title="Chunk ${c.id}: ${c.status}" style="background: ${getChunkColor(c.status)};"></div>`
-                    ).join('');
-                } else {
-                    data.masscan_chunks_status.forEach((c, i) => {
-                        const el = grid.children[i];
-                        if (el) {
-                            el.style.backgroundColor = getChunkColor(c.status);
-                            el.className = getChunkClass(c.status);
-                            el.title = `Chunk ${c.id}: ${c.status}`;
-                        }
-                    });
-                }
-            }
+            // Active Chunks - Filter only running chunks
+            renderActiveChunks(data.masscan_chunks_status || []);
 
+            // Extraction progress
             const ePct = data.extraction_total > 0 ? (data.extraction_progress / data.extraction_total * 100) : 0;
             document.getElementById('extract-bar').style.width = `${ePct}%`;
             document.getElementById('extract-txt').innerText = `${Math.round(ePct)}%`;
 
+            // Stats
             document.getElementById('found-count').innerText = data.found_count || 0;
             document.getElementById('active-threads').innerText = data.active_threads || 0;
 
         } catch (e) {
             console.error('Status update error:', e);
+        }
+    }
+
+    function renderActiveChunks(chunks) {
+        // Filter only running chunks (not completed, not pending)
+        const activeChunks = chunks.filter(c => c.status === 'running');
+
+        document.getElementById('active-chunk-count').innerText = `${activeChunks.length} running`;
+
+        const container = document.getElementById('chunk-list');
+
+        if (activeChunks.length === 0) {
+            container.innerHTML = `
+            <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.85rem;">
+                ${chunks.length > 0 && chunks.every(c => c.status === 'completed')
+                    ? 'All chunks completed!'
+                    : 'No active chunks'}
+            </div>
+        `;
+            return;
+        }
+
+        container.innerHTML = activeChunks.map(chunk => {
+            const isExpanded = expandedChunks.has(chunk.id);
+            const progressPct = chunk.total > 0 ? (chunk.processed / chunk.total * 100) : 0;
+
+            return `
+            <div class="chunk-item ${isExpanded ? 'expanded' : ''}" onclick="toggleChunk(${chunk.id})">
+                <div class="chunk-header">
+                    <span class="chunk-id">Chunk #${chunk.id + 1}</span>
+                    <span class="chunk-status">Running</span>
+                </div>
+                <div class="chunk-details">
+                    <div class="chunk-detail-row">
+                        <span>First Range:</span>
+                        <span>${chunk.first_range || 'N/A'}</span>
+                    </div>
+                    <div class="chunk-detail-row">
+                        <span>Last Range:</span>
+                        <span>${chunk.last_range || 'N/A'}</span>
+                    </div>
+                    <div class="chunk-detail-row">
+                        <span>Total IPs:</span>
+                        <span>${chunk.total || 0}</span>
+                    </div>
+                    <div class="chunk-detail-row">
+                        <span>Processed:</span>
+                        <span>${chunk.processed || 0}</span>
+                    </div>
+                    <div class="chunk-detail-row">
+                        <span>Remaining:</span>
+                        <span>${(chunk.total || 0) - (chunk.processed || 0)}</span>
+                    </div>
+                    <div class="chunk-progress">
+                        <div class="chunk-progress-fill" style="width: ${progressPct}%;"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        }).join('');
+    }
+
+    function toggleChunk(id) {
+        if (expandedChunks.has(id)) {
+            expandedChunks.delete(id);
+        } else {
+            expandedChunks.add(id);
         }
     }
 
@@ -286,211 +307,6 @@
         } catch (e) { }
     }
 
-    // Quick Search
-    async function performSearch() {
-        const q = document.getElementById('search-input').value || '';
-
-        try {
-            const res = await fetch(`/search/title?q=${encodeURIComponent(q)}`);
-            const results = await res.json();
-            renderResults(results);
-        } catch (e) {
-            console.error('Search error:', e);
-        }
-    }
-
-    // Filters
-    function toggleFilters() {
-        filtersVisible = !filtersVisible;
-        document.getElementById('filters-panel').classList.toggle('hidden', !filtersVisible);
-        if (filtersVisible && filterCount === 0) {
-            addFilter();
-        }
-    }
-
-    function addFilter() {
-        filterCount++;
-        const container = document.getElementById('filters-container');
-        const row = document.createElement('div');
-        row.className = 'filter-row';
-        row.id = `filter-${filterCount}`;
-        row.innerHTML = `
-        <select class="filter-field">
-            <option value="title">Title</option>
-            <option value="ip">IP</option>
-            <option value="domain">Domain</option>
-            <option value="waf">WAF</option>
-            <option value="technologies">Technology</option>
-            <option value="port">Port</option>
-            <option value="jarm_hash">JARM Hash</option>
-            <option value="favicon_hash">Favicon Hash</option>
-        </select>
-        <select class="filter-operator">
-            <option value="contains">Contains</option>
-            <option value="not_contains">Not Contains</option>
-            <option value="equals">Equals</option>
-            <option value="not_equals">Not Equals</option>
-        </select>
-        <input type="text" class="filter-value" placeholder="Value...">
-        <button class="filter-remove" onclick="removeFilter(${filterCount})">×</button>
-    `;
-        container.appendChild(row);
-    }
-
-    function removeFilter(id) {
-        const row = document.getElementById(`filter-${id}`);
-        if (row) row.remove();
-    }
-
-    function clearFilters() {
-        document.getElementById('filters-container').innerHTML = '';
-        filterCount = 0;
-        addFilter();
-    }
-
-    async function applyFilters() {
-        const rows = document.querySelectorAll('.filter-row');
-        const filters = [];
-
-        rows.forEach(row => {
-            const field = row.querySelector('.filter-field').value;
-            const operator = row.querySelector('.filter-operator').value;
-            const value = row.querySelector('.filter-value').value.trim();
-
-            if (value) {
-                filters.push({ field, operator, value });
-            }
-        });
-
-        try {
-            const res = await fetch('/search/advanced', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filters })
-            });
-            const results = await res.json();
-            renderResults(results);
-        } catch (e) {
-            console.error('Filter error:', e);
-        }
-    }
-
-    // Render Results
-    function renderResults(results) {
-        if (results.error) return;
-
-        const container = document.getElementById('results-container');
-
-        if (!results.length) {
-            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No results found</div>';
-            return;
-        }
-
-        container.innerHTML = results.map((r, idx) => {
-            const resp = r.http_responseForIP || r.https_responseForIP ||
-                r.http_responseForDomainName || r.https_responseForDomainName || {};
-            const data = Array.isArray(resp) ? resp[0] || {} : resp;
-
-            const techTags = (data.technologies || [])
-                .map(t => `<span class="tag tag-tech">${t}</span>`).join('');
-            const wafTag = data.waf ? `<span class="tag tag-waf">WAF: ${data.waf}</span>` : '';
-
-            return `
-            <div class="result-card" onclick="showDetail(${idx})" style="cursor: pointer;" data-result='${JSON.stringify(r).replace(/'/g, "&#39;")}'>
-                <div class="result-title">
-                    ${data.title || 'No Title'}
-                    ${wafTag}
-                </div>
-                <div style="margin-top: 0.25rem;">${techTags}</div>
-                <div class="result-url">${data.request || 'N/A'}</div>
-                <div class="result-meta">
-                    <div>IP: ${data.ip || 'N/A'} | Port: ${data.port || 'N/A'}</div>
-                    <div>Favicon: <span class="font-mono">${data.favicon_hash || 'N/A'}</span></div>
-                </div>
-            </div>
-        `;
-        }).join('');
-    }
-
-    // Detail Modal
-    function showDetail(idx) {
-        const cards = document.querySelectorAll('.result-card');
-        const resultData = JSON.parse(cards[idx].dataset.result);
-
-        let content = '';
-
-        // Show all response types
-        const responseTypes = [
-            ['https_responseForIP', 'HTTPS Response (IP)'],
-            ['http_responseForIP', 'HTTP Response (IP)'],
-            ['https_responseForDomainName', 'HTTPS Response (Domain)'],
-            ['http_responseForDomainName', 'HTTP Response (Domain)']
-        ];
-
-        responseTypes.forEach(([key, label]) => {
-            if (resultData[key]) {
-                const data = Array.isArray(resultData[key]) ? resultData[key][0] : resultData[key];
-                if (data) {
-                    content += `
-                    <div class="detail-section">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text-accent);">${label}</h4>
-                        <div class="detail-label">URL</div>
-                        <div class="detail-value">${data.request || 'N/A'}</div>
-                        
-                        <div class="detail-label mt-sm">Title</div>
-                        <div class="detail-value">${data.title || 'N/A'}</div>
-                        
-                        <div class="detail-label mt-sm">IP / Port</div>
-                        <div class="detail-value">${data.ip || 'N/A'}:${data.port || 'N/A'}</div>
-                        
-                        <div class="detail-label mt-sm">Domain</div>
-                        <div class="detail-value">${data.domain || 'N/A'}</div>
-                        
-                        ${data.redirected_url ? `
-                            <div class="detail-label mt-sm">Redirected To</div>
-                            <div class="detail-value">${data.redirected_url}</div>
-                        ` : ''}
-                        
-                        <div class="detail-label mt-sm">Technologies</div>
-                        <div>${(data.technologies || []).map(t => `<span class="tag tag-tech">${t}</span>`).join(' ') || 'None detected'}</div>
-                        
-                        ${data.waf ? `
-                            <div class="detail-label mt-sm">WAF</div>
-                            <div><span class="tag tag-waf">${data.waf}</span></div>
-                        ` : ''}
-                        
-                        <div class="detail-label mt-sm">Favicon Hash</div>
-                        <div class="detail-value">${data.favicon_hash || 'N/A'}</div>
-                        
-                        <div class="detail-label mt-sm">JARM Hash</div>
-                        <div class="detail-value" style="font-size: 0.8rem;">${data.jarm_hash || 'N/A'}</div>
-                        
-                        ${data.response_headers ? `
-                            <div class="detail-label mt-sm">Response Headers</div>
-                            <div class="detail-value" style="font-size: 0.75rem; max-height: 150px; overflow-y: auto;">
-                                ${Object.entries(data.response_headers).map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-                }
-            }
-        });
-
-        if (!content) {
-            content = '<div style="text-align: center; color: var(--text-muted);">No response data available</div>';
-        }
-
-        document.getElementById('detail-content').innerHTML = content;
-        document.getElementById('detail-modal').classList.add('active');
-        document.getElementById('modal-overlay').classList.add('active');
-    }
-
-    function closeDetailModal() {
-        document.getElementById('detail-modal').classList.remove('active');
-        document.getElementById('modal-overlay').classList.remove('active');
-    }
-
     // Modal functions
     function showStopModal() {
         document.getElementById('stop-modal').classList.add('active');
@@ -499,7 +315,6 @@
 
     function closeModal() {
         document.getElementById('stop-modal').classList.remove('active');
-        document.getElementById('detail-modal').classList.remove('active');
         document.getElementById('modal-overlay').classList.remove('active');
     }
 
@@ -518,35 +333,12 @@
         }
     }
 
-    // Export
-    async function exportResults() {
-        const filename = prompt('Enter filename (e.g. results.json):');
-        if (!filename) return;
-
-        try {
-            await fetch('/export', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename })
-            });
-            alert('Export complete!');
-        } catch (e) {
-            alert('Export failed: ' + e);
-        }
-    }
-
     // Initialize
     statusInterval = setInterval(updateStatus, 1000);
     logInterval = setInterval(fetchLogs, 1500);
     updateStatus();
     fetchLogs();
 
-    // Enter key for search
-    document.getElementById('search-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') performSearch();
-    });
-
-    // Close modal on overlay click
     document.getElementById('modal-overlay').addEventListener('click', closeModal);
 </script>
 {% endblock %}

@@ -93,11 +93,42 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
         temp_results.append(chunk_output)
         chunk_counts.append(len(chunk_lines))
 
+    # Store chunk details for status reporting
+    chunk_details = []
+    for i in range(len(temp_files)):
+        # Get first and last IP range for display
+        chunk_start_idx = i * len(all_lines) // num_chunks
+        chunk_end_idx = (i + 1) * len(all_lines) // num_chunks
+        chunk_ranges = all_lines[chunk_start_idx:chunk_end_idx]
+        
+        first_range = chunk_ranges[0] if chunk_ranges else "N/A"
+        last_range = chunk_ranges[-1] if chunk_ranges else "N/A"
+        
+        chunk_details.append({
+            "id": i,
+            "status": "pending",
+            "first_range": first_range,
+            "last_range": last_range,
+            "total": len(chunk_ranges),
+            "processed": 0
+        })
+
     def run_single_masscan(input_path, output_path, idx):
-        # Notify Running
+        # Get chunk detail
+        chunk_info = chunk_details[idx] if idx < len(chunk_details) else {}
+        
+        # Notify Running with full details
         try:
             import urllib.request
-            data = json.dumps({"chunk_update": {"id": idx, "status": "running"}}).encode('utf-8')
+            update_data = {
+                "id": idx, 
+                "status": "running",
+                "first_range": chunk_info.get("first_range", ""),
+                "last_range": chunk_info.get("last_range", ""),
+                "total": chunk_info.get("total", 0),
+                "processed": 0
+            }
+            data = json.dumps({"chunk_update": update_data}).encode('utf-8')
             req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
             urllib.request.urlopen(req, timeout=2)
         except Exception:
@@ -105,8 +136,6 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
 
         cmd = f"sudo masscan -p443 --rate {config.masscan_rate} --wait 0 -iL '{input_path}' -oH '{output_path}'"
         try:
-             # Add timeout to prevent hanging forever, though masscan usually finishes. 
-             # We rely on the global kill for stop, but a timeout is good practice.
              subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=None) 
         except subprocess.TimeoutExpired:
             pass
@@ -120,10 +149,15 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
         except OSError:
             pass
         
-        # Notify Completed
+        # Notify Completed with full details
         try:
             import urllib.request
-            data = json.dumps({"chunk_update": {"id": idx, "status": "completed"}}).encode('utf-8')
+            update_data = {
+                "id": idx, 
+                "status": "completed",
+                "processed": chunk_info.get("total", 0)
+            }
+            data = json.dumps({"chunk_update": update_data}).encode('utf-8')
             req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
             urllib.request.urlopen(req, timeout=2)
         except Exception:
