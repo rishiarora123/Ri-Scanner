@@ -71,6 +71,15 @@ async def run_enhanced_recon_tools(domain):
                 "errors": errors
             }, f, indent=2)
         
+        # Save to subdomain_manager (files + MongoDB)
+        try:
+            from .subdomain_manager import get_subdomain_manager
+            manager = get_subdomain_manager()
+            manager.save_subdomains(domain, subdomains, source="recon")
+            log_event(f"[*] Saved subdomains to database")
+        except Exception as e:
+            log_event(f"[!] Database save warning: {e}")
+        
         return subdomains
         
     except ImportError as e:
@@ -81,16 +90,29 @@ async def run_enhanced_recon_tools(domain):
         return []
 
 
+def _run_async_recon_in_thread(domain):
+    """Run async recon in a separate thread with its own event loop."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result = loop.run_until_complete(run_enhanced_recon_tools(domain))
+        return result
+    finally:
+        loop.close()
+
+
 def run_recon(domain, threads, bgp_url=None):
     log_event(f"[*] Starting Recon for {domain}...")
     
     # First, run enhanced recon tools to gather subdomains
+    # Use a thread executor to avoid event loop conflicts
+    subdomains = []
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        subdomains = loop.run_until_complete(run_enhanced_recon_tools(domain))
-        loop.close()
-        log_event(f"[*] Enhanced recon gathered {len(subdomains)} unique subdomains")
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run_async_recon_in_thread, domain)
+            subdomains = future.result(timeout=300)  # 5 min timeout
+            log_event(f"[*] Enhanced recon gathered {len(subdomains)} unique subdomains")
     except Exception as e:
         log_event(f"[!] Enhanced recon failed, continuing with legacy: {e}")
     

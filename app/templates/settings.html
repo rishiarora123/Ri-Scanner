@@ -31,21 +31,7 @@
                         placeholder="Enter Shodan API key">
                 </div>
 
-                <!-- Censys -->
-                <div class="form-group">
-                    <label class="form-label">
-                        Censys API ID
-                        <a href="https://search.censys.io/account/api" target="_blank"
-                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
-                    </label>
-                    <input type="password" class="form-input" name="CENSYS_API_ID" id="CENSYS_API_ID"
-                        placeholder="Enter Censys API ID">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Censys API Secret</label>
-                    <input type="password" class="form-input" name="CENSYS_API_SECRET" id="CENSYS_API_SECRET"
-                        placeholder="Enter Censys API Secret">
-                </div>
+
 
                 <!-- SecurityTrails -->
                 <div class="form-group">
@@ -171,7 +157,7 @@
     </p>
 
     <!-- Select All Controls -->
-    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+    <div id="select-controls" style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
         <button onclick="selectAllTools()" class="btn btn-outline" style="flex: 1;">✅ Select All</button>
         <button onclick="deselectAllTools()" class="btn btn-outline" style="flex: 1;">❌ Deselect All</button>
     </div>
@@ -193,7 +179,9 @@
     </div>
     <div class="modal-actions">
         <button id="install-btn" onclick="installSelectedTools()" class="btn btn-success">📦 Install Selected</button>
-        <button onclick="closeInstallModal()" class="btn btn-outline">Cancel</button>
+        <button id="background-btn" onclick="runInBackground()" class="btn btn-primary" style="display: none;">🔄 Run in
+            Background</button>
+        <button id="cancel-btn" onclick="closeInstallModal()" class="btn btn-outline">Cancel</button>
     </div>
 </div>
 
@@ -481,11 +469,18 @@
         const progressCounter = document.getElementById('install-progress-counter');
         const progressBar = document.getElementById('install-progress-bar');
         const installBtn = document.getElementById('install-btn');
+        const backgroundBtn = document.getElementById('background-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const selectControls = document.getElementById('select-controls');
         const list = document.getElementById('install-tools-list');
 
         progressDiv.style.display = 'block';
         installBtn.disabled = true;
         installBtn.innerHTML = '⏳ Installing...';
+        backgroundBtn.style.display = 'inline-block';
+        cancelBtn.style.display = 'none';
+        selectControls.style.display = 'none';
+        window.isInstalling = true;
 
         const total = toolIds.length;
         let completed = 0;
@@ -511,31 +506,62 @@
                 const result = await res.json();
                 results.push({ tool: toolId, ...result });
 
-                // Add result to display immediately
-                const icon = result.success ? '✅' : '❌';
-                const color = result.success ? 'var(--success)' : 'var(--danger)';
-                resultsDiv.innerHTML += `<div style="margin-bottom: 0.25rem; color: ${color}; font-size: 0.9rem;">${icon} ${toolId}: ${result.message}</div>`;
+                // Add result to display immediately (if modal still open)
+                if (document.getElementById('install-results')) {
+                    const icon = result.success ? '✅' : '❌';
+                    const color = result.success ? 'var(--success)' : 'var(--danger)';
+                    document.getElementById('install-results').innerHTML += `<div style="margin-bottom: 0.25rem; color: ${color}; font-size: 0.9rem;">${icon} ${toolId}: ${result.message}</div>`;
+                }
             } catch (e) {
                 results.push({ tool: toolId, success: false, message: e.message });
-                resultsDiv.innerHTML += `<div style="margin-bottom: 0.25rem; color: var(--danger); font-size: 0.9rem;">❌ ${toolId}: ${e.message}</div>`;
+                if (document.getElementById('install-results')) {
+                    document.getElementById('install-results').innerHTML += `<div style="margin-bottom: 0.25rem; color: var(--danger); font-size: 0.9rem;">❌ ${toolId}: ${e.message}</div>`;
+                }
             }
 
             completed++;
         }
 
         // Complete
+        window.isInstalling = false;
         progressBar.style.width = '100%';
         progressText.innerHTML = '✅ Installation Complete!';
         progressCounter.innerText = `${results.filter(r => r.success).length} / ${total} succeeded`;
 
         installBtn.innerHTML = '📦 Install Selected';
         installBtn.disabled = false;
+        backgroundBtn.style.display = 'none';
+        cancelBtn.style.display = 'inline-block';
+        selectControls.style.display = 'flex';
 
         // Refresh status after install
         setTimeout(async () => {
             closeInstallModal();
             progressDiv.style.display = 'none';
             await checkToolsStatus();
+        }, 2000);
+    }
+
+    function runInBackground() {
+        // Close modal but let installation continue in background
+        document.getElementById('install-modal').classList.remove('active');
+        document.getElementById('install-modal-overlay').classList.remove('active');
+
+        // Show a notification that install is running
+        const notification = document.createElement('div');
+        notification.id = 'bg-install-notification';
+        notification.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: var(--glass-bg); border: 1px solid var(--glass-border); padding: 1rem 1.5rem; border-radius: var(--radius-md); z-index: 9999; backdrop-filter: blur(20px);';
+        notification.innerHTML = '<span style="color: var(--primary);">🔄 Tools installing in background...</span>';
+        document.body.appendChild(notification);
+
+        // Auto-remove when done
+        const checkInterval = setInterval(() => {
+            if (!window.isInstalling) {
+                clearInterval(checkInterval);
+                notification.innerHTML = '<span style="color: var(--success);">✅ Installation complete!</span>';
+                setTimeout(() => notification.remove(), 3000);
+                checkToolsStatus();
+            }
         }, 2000);
     }
 </script>

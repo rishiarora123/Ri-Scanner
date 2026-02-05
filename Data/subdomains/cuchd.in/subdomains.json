@@ -1,0 +1,218 @@
+{
+  "subdomains": [
+    {
+      "domain": "abhivyakti.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "admissions.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "aid.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "alumni.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "blog.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "bot.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "careers.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "cucet.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "cuils.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "culib.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "cusat.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "delivery.mail3.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "exam.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "fasttrack.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "focus.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "focuslms.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "forms.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "ihm.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "ilearn.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "international.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "lms.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "mail.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "news.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "payments.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "preview.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "students.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "studio.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "uims.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "url.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "www.alumni.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "www.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:38:30.069014",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "chandigarhuniversity.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:51:04.383869",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "click.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:51:04.383869",
+      "is_new_from_asn": false
+    },
+    {
+      "domain": "cuet.cuchd.in",
+      "source": "recon",
+      "added_at": "2026-02-05T21:51:04.383869",
+      "is_new_from_asn": false
+    }
+  ],
+  "metadata": {
+    "last_updated": "2026-02-05T22:07:45.961393",
+    "total_count": 35
+  }
+}

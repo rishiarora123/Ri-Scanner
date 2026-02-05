@@ -1,0 +1,40 @@
+{
+  "abhivyakti.cuchd.in": {
+    "url": "abhivyakti.cuchd.in",
+    "technologies": [],
+    "server": null,
+    "status_code": null,
+    "ip": null,
+    "headers": {},
+    "cms": null,
+    "frameworks": [],
+    "languages": [],
+    "error": "",
+    "last_updated": "2026-02-05T22:10:14.121467"
+  },
+  "uims.cuchd.in": {
+    "url": "uims.cuchd.in",
+    "technologies": [
+      "ASP.NET"
+    ],
+    "server": "Microsoft-IIS/10.0",
+    "status_code": 200,
+    "ip": null,
+    "headers": {
+      "Content-Type": "text/html",
+      "Last-Modified": "Fri, 31 Oct 2025 17:29:10 GMT",
+      "Accept-Ranges": "bytes",
+      "Etag": "\"64f662de8b4adc1:0\"",
+      "Server": "Microsoft-IIS/10.0",
+      "X-Powered-By": "ASP.NET",
+      "Date": "Thu, 05 Feb 2026 16:41:00 GMT",
+      "Content-Length": "703"
+    },
+    "cms": null,
+    "frameworks": [],
+    "languages": [
+      "ASP.NET"
+    ],
+    "last_updated": "2026-02-05T22:11:27.004310"
+  }
+}

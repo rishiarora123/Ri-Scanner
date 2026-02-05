@@ -1,0 +1,833 @@
+{
+  "uims.cuchd.in": {
+    "domain": "uims.cuchd.in",
+    "status": "completed",
+    "total_found": 137,
+    "results": [
+      {
+        "url": "http://uims.cuchd.in/0.htpasswd",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/1.htaccess",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/!.htpasswd",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/!.htaccess",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.env~",
+        "status": 403,
+        "length": 35563,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.gitignore~",
+        "status": 403,
+        "length": 35569,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess-local",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess-marco",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess.BAK",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess.bak",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess.orig",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess.save",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess.txt",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htpasswd",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess.sample",
+        "status": 403,
+        "length": 35574,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htpasswd-old",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess-dev",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htpasswd.bak",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htgroup",
+        "status": 403,
+        "length": 35566,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.htaccess",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.ssh/id_rsa~",
+        "status": 403,
+        "length": 35570,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.ssh/id_rsa.pub~",
+        "status": 403,
+        "length": 35574,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.ssh/id_rsa.key~",
+        "status": 403,
+        "length": 35574,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.ssh/id_rsa.priv~",
+        "status": 403,
+        "length": 35575,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/\\..\\..\\..\\..\\..\\..\\..\\..\\..\\etc\\passwd",
+        "status": 403,
+        "length": 312,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.wwwacl",
+        "status": 403,
+        "length": 35565,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/.www_acl",
+        "status": 403,
+        "length": 35566,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/_.htpasswd",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/admin/.htaccess",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/admin/fckeditor/editor/filemanager/connectors/php/connector.php",
+        "status": 403,
+        "length": 35621,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/admin/fckeditor/editor/filemanager/browser/default/connectors/php/connector.php",
+        "status": 403,
+        "length": 35637,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/admin/includes/configure.php~",
+        "status": 403,
+        "length": 35587,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/admin/server-status",
+        "status": 403,
+        "length": 35577,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/.htaccess",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/config.xml",
+        "status": 403,
+        "length": 35576,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.additional",
+        "status": 403,
+        "length": 35582,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.xml.additional",
+        "status": 403,
+        "length": 35586,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/config/database.yml~",
+        "status": 403,
+        "length": 35582,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.xml.localRemote",
+        "status": 403,
+        "length": 35587,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.xml.phpunit",
+        "status": 403,
+        "length": 35583,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.xml.template",
+        "status": 403,
+        "length": 35584,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.xml.vmachine.rm",
+        "status": 403,
+        "length": 35587,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/fpc.xml",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/unschedule.bat",
+        "status": 403,
+        "length": 35576,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.xml.bak",
+        "status": 403,
+        "length": 35579,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/enterprise.xml",
+        "status": 403,
+        "length": 35580,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/app/etc/local.xml.live",
+        "status": 403,
+        "length": 35580,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/Application/Runtime/common~runtime.php",
+        "status": 403,
+        "length": 35596,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/aspnet_client",
+        "status": 301,
+        "length": 158,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/aux",
+        "status": 403,
+        "length": 35561,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/backup.htpasswd",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/Build.bat",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/cabal.project.local~",
+        "status": 403,
+        "length": 35578,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/cc",
+        "status": 403,
+        "length": 35560,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/cc-errors.txt",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/cc-log.txt",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/com1",
+        "status": 403,
+        "length": 35562,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/com2",
+        "status": 403,
+        "length": 35562,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/com3",
+        "status": 403,
+        "length": 35562,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/con",
+        "status": 403,
+        "length": 35561,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/config.bat",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/config.php.inc~",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/config/database.yml~",
+        "status": 403,
+        "length": 35578,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/config.php~",
+        "status": 403,
+        "length": 35569,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/configuration.php~",
+        "status": 403,
+        "length": 35576,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/database.yml~",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/etc/config.ini",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/etc/database.xml",
+        "status": 403,
+        "length": 35574,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/etc/lib/pChart2/examples/imageMap/index.php",
+        "status": 403,
+        "length": 35601,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/etc/fstab",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/etc/hosts",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/etc/passwd",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/etc/shadow",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/fckeditor/editor/filemanager/browser/default/connectors/php/connector.php",
+        "status": 403,
+        "length": 35631,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/fckeditor/editor/filemanager/connectors/php/connector.php",
+        "status": 403,
+        "length": 35615,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/global.asa",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/Global.asa",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/global.asa.temp",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/global.asa.old",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/global.asa.orig",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/global.asa.bak",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/global.asa.tmp",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/httpd.conf",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/httpd.conf.backup",
+        "status": 403,
+        "length": 35575,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/httpd.conf.default",
+        "status": 403,
+        "length": 35576,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/includes/fckeditor/editor/filemanager/browser/default/connectors/php/connector.php",
+        "status": 403,
+        "length": 35640,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/includes/fckeditor/editor/filemanager/connectors/php/connector.php",
+        "status": 403,
+        "length": 35624,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/includes/configure.php~",
+        "status": 403,
+        "length": 35581,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/index.php~",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/init.bat",
+        "status": 403,
+        "length": 35566,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/install~",
+        "status": 403,
+        "length": 35566,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/javax.faces.resource.../WEB-INF/web.xml.jsf",
+        "status": 403,
+        "length": 35601,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/linusadmin-phpinfo.php",
+        "status": 403,
+        "length": 35580,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/localsettings.php~",
+        "status": 403,
+        "length": 35576,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/lpt1",
+        "status": 403,
+        "length": 35562,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/lpt2",
+        "status": 403,
+        "length": 35562,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/m4/lt~obsolete.m4",
+        "status": 403,
+        "length": 35575,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/metrics/*.json",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/Mkfile.old",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/myasp.asp::$DATA",
+        "status": 403,
+        "length": 35574,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/old.htaccess",
+        "status": 403,
+        "length": 35570,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/old.htpasswd",
+        "status": 403,
+        "length": 35570,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/open-flash-chart.swf?get-data=(function(){alert(document.domain)})()",
+        "status": 403,
+        "length": 35630,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/phpinfo()",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/phpinfo.php4",
+        "status": 403,
+        "length": 35570,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/phpinfo",
+        "status": 403,
+        "length": 35565,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/phpinfo.php",
+        "status": 403,
+        "length": 35569,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/phpinfo.php3",
+        "status": 403,
+        "length": 35570,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/php.ini~",
+        "status": 403,
+        "length": 35566,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/phpinfo/",
+        "status": 403,
+        "length": 35566,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/phpinfo.php5",
+        "status": 403,
+        "length": 35570,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/prn",
+        "status": 403,
+        "length": 35561,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/proxy.stream?origin=https://google.com",
+        "status": 403,
+        "length": 35596,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/readfile",
+        "status": 403,
+        "length": 35566,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/sample.txt~",
+        "status": 403,
+        "length": 35569,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/server-status-localhost",
+        "status": 403,
+        "length": 35581,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/server-status",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/server-info",
+        "status": 403,
+        "length": 35569,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/servlet/oracle.xml.xsql.XSQLServlet/soapdocs/webapps/soap/WEB-INF/config/soapConfig.xml",
+        "status": 403,
+        "length": 35645,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/servlet/Oracle.xml.xsql.XSQLServlet/soapdocs/webapps/soap/WEB-INF/config/soapConfig.xml",
+        "status": 403,
+        "length": 35645,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/servlet/oracle.xml.xsql.XSQLServlet/xsql/lib/XSQLConfig.xml",
+        "status": 403,
+        "length": 35617,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/servlet/Oracle.xml.xsql.XSQLServlet/xsql/lib/XSQLConfig.xml",
+        "status": 403,
+        "length": 35617,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/settings.php~",
+        "status": 403,
+        "length": 35571,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/soapdocs/webapps/soap/WEB-INF/config/soapConfig.xml",
+        "status": 403,
+        "length": 35609,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/stronghold-status",
+        "status": 403,
+        "length": 35575,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/stronghold-info",
+        "status": 403,
+        "length": 35573,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/tftp",
+        "status": 403,
+        "length": 35562,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/trace.axd",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/Trace.axd",
+        "status": 403,
+        "length": 35567,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/traceroute",
+        "status": 403,
+        "length": 35568,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/Trace.axd::$DATA",
+        "status": 403,
+        "length": 35574,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/web.config::$DATA",
+        "status": 403,
+        "length": 35575,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/wp-config.php~",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/wwwboard/passwd.txt",
+        "status": 403,
+        "length": 35577,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/xsql/lib/XSQLConfig.xml",
+        "status": 403,
+        "length": 35581,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/XSQLConfig.xml",
+        "status": 403,
+        "length": 35572,
+        "type": "text/html"
+      },
+      {
+        "url": "http://uims.cuchd.in/yii.bat",
+        "status": 403,
+        "length": 35565,
+        "type": "text/html"
+      }
+    ],
+    "started_at": "2026-02-05T22:11:35.708682",
+    "completed_at": "2026-02-05T22:22:55.828732"
+  }
+}

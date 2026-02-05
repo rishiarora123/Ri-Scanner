@@ -276,10 +276,18 @@ class ToolsChecker:
         if not tool.install_cmds:
             return (False, "No install command available")
         
+        # Check if running as root
+        is_root = os.geteuid() == 0
+        
         # Determine which package manager to use
         if package_manager == "auto":
-            # Priority order: brew (macOS), go, pip, apt, cargo, git
-            priority = ["brew", "go", "pip", "apt", "cargo", "git"]
+            # Priority order: go, pip, brew (only if not root), apt, cargo, git
+            if is_root:
+                # Brew doesn't work as root, so deprioritize it
+                priority = ["go", "pip", "apt", "cargo", "git"]
+            else:
+                priority = ["brew", "go", "pip", "apt", "cargo", "git"]
+            
             for pm in priority:
                 if pm in tool.install_cmds:
                     # Check if package manager is available
@@ -289,27 +297,82 @@ class ToolsChecker:
             else:
                 return (False, "No suitable package manager found")
         
+        # If brew is selected but we're root, try alternative
+        if package_manager == "brew" and is_root:
+            alternatives = ["go", "pip", "apt", "cargo", "git"]
+            for alt in alternatives:
+                if alt in tool.install_cmds and shutil.which(alt):
+                    package_manager = alt
+                    break
+            else:
+                return (False, "Cannot use Homebrew as root. Run without sudo or install manually.")
+        
         if package_manager not in tool.install_cmds:
             return (False, f"No install command for {package_manager}")
         
         install_cmd = tool.install_cmds[package_manager]
         
+        # Handle special cases
+        if package_manager == "pip":
+            # Add --no-cache-dir to avoid permission issues
+            if "--no-cache-dir" not in install_cmd:
+                install_cmd = install_cmd.replace("pip install", "pip install --no-cache-dir")
+                install_cmd = install_cmd.replace("pip3 install", "pip3 install --no-cache-dir")
+        
+        if package_manager == "git":
+            # Clean up existing directories for git clones
+            import re
+            # Extract directory name - handle various git clone patterns
+            # Pattern: git clone <url> or git clone <url> && cd <dir>
+            match = re.search(r'git clone [^\s]+/([^/\s]+?)(?:\.git)?(?:\s|$|\'|\")', install_cmd)
+            if match:
+                dir_name = match.group(1)
+                if os.path.exists(dir_name):
+                    try:
+                        shutil.rmtree(dir_name)
+                    except Exception as e:
+                        return (False, f"Failed to clean existing directory {dir_name}: {e}")
+        
         try:
             # Run install command
+            env = os.environ.copy()
+            go_bin_path = os.path.expanduser("~/go/bin")
+            
+            # For go installs, ensure GOPATH/bin is in PATH
+            if package_manager == "go":
+                env["PATH"] = f"{go_bin_path}:{env.get('PATH', '')}"
+            
             proc = subprocess.run(
                 install_cmd,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=300,  # 5 minute timeout
+                env=env
             )
             
             if proc.returncode == 0:
+                # For go installs, copy binary to /usr/local/bin so it's globally available
+                if package_manager == "go":
+                    tool_name = tool_id
+                    go_binary = os.path.join(go_bin_path, tool_name)
+                    if os.path.exists(go_binary):
+                        try:
+                            subprocess.run(
+                                f"sudo cp {go_binary} /usr/local/bin/",
+                                shell=True,
+                                capture_output=True,
+                                timeout=30
+                            )
+                        except Exception:
+                            pass  # Non-critical, tool still works from go/bin
+                
                 # Clear cache to force re-check
                 self._tool_status_cache.pop(tool_id, None)
                 return (True, f"Successfully installed {tool.name}")
             else:
-                return (False, f"Install failed: {proc.stderr[:200]}")
+                error_msg = proc.stderr[:150] if proc.stderr else proc.stdout[:150]
+                return (False, f"Install failed: {error_msg}")
                 
         except subprocess.TimeoutExpired:
             return (False, "Installation timed out")

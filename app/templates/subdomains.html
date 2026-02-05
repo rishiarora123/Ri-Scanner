@@ -1,0 +1,672 @@
+{% extends "base.html" %}
+
+{% block title %}Subdomains - Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🌐 Subdomains Analysis</h1>
+    <p>Comprehensive subdomain enumeration with tech detection, fuzzing, and crawling</p>
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 1.5rem;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+        <div>
+            <label class="form-label">Scan ID (Optional)</label>
+            <input type="text" id="scanIdInput" class="form-input" placeholder="All scans">
+        </div>
+        <div>
+            <label class="form-label">Search</label>
+            <input type="text" id="searchInput" class="form-input" placeholder="Search subdomains...">
+        </div>
+        <div>
+            <label class="form-label">Source</label>
+            <select id="filterSelect" class="form-input">
+                <option value="">All Sources</option>
+                <option value="recon">Recon Only</option>
+                <option value="asn">From ASN</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label">Status</label>
+            <select id="mainStatusFilter" class="form-input">
+                <option value="">All</option>
+                <option value="200">200 OK</option>
+                <option value="301">301 Moved</option>
+                <option value="403">403 Forbidden</option>
+                <option value="404">404 Not Found</option>
+                <option value="500">500 Server Error</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" onchange="toggleAutoRefresh(this)"> Auto Refresh
+            </label>
+        </div>
+        <button onclick="loadSubdomains()" class="btn btn-primary">Load</button>
+    </div>
+</div>
+
+<!-- Subdomains Table -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3>Discovered Subdomains (<span id="totalCount">0</span>)</h3>
+        <div style="display: flex; gap: 0.5rem;">
+            <span class="badge badge-success" id="newFromAsnBadge" style="display: none;">
+                <span id="newFromAsnCount">0</span> New from ASN
+            </span>
+        </div>
+    </div>
+
+    <div id="subdomainsTable" style="max-height: 500px; overflow-y: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Domain</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="subdomainsBody">
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+                        Click Load to view all subdomains across all scans
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Sliding Window (Hidden by default) -->
+<div id="slidingWindow" class="sliding-window" style="display: none;">
+    <div class="sliding-window-overlay" onclick="closeSlidingWindow()"></div>
+    <div class="sliding-window-content">
+        <div class="sliding-window-header">
+            <h2 id="windowDomain">Domain Details</h2>
+            <button onclick="closeSlidingWindow()" class="btn-close">✕</button>
+        </div>
+
+        <div class="sliding-window-tabs">
+            <button class="tab-btn active" onclick="switchTab('details', this)">📊 Details</button>
+            <button class="tab-btn" onclick="switchTab('fuzzing', this)">🔍 Fuzzing</button>
+            <button class="tab-btn" onclick="switchTab('crawler', this)">🕷️ Crawler</button>
+        </div>
+
+        <div class="sliding-window-body">
+            <!-- Tab 1: Domain Details -->
+            <div id="detailsTab" class="tab-content active">
+                <div id="detailsLoading" class="loading">Loading details...</div>
+                <div id="detailsContent" style="display: none;">
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">IP Address</span>
+                            <span class="detail-value" id="detailIP">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Status Code</span>
+                            <span class="detail-value" id="detailStatus">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Server</span>
+                            <span class="detail-value" id="detailServer">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">CMS</span>
+                            <span class="detail-value" id="detailCMS">-</span>
+                        </div>
+                    </div>
+
+                    <h4 style="margin-top: 1.5rem;">Technologies Detected</h4>
+                    <div id="techStack" class="tech-stack"></div>
+
+                    <h4 style="margin-top: 1.5rem;">Frameworks</h4>
+                    <div id="frameworks" class="tech-stack"></div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Directory Fuzzing -->
+            <div id="fuzzingTab" class="tab-content">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                    <div style="display: flex; gap: 0.5rem;">
+                        <select id="statusFilter" class="form-input" style="width: auto;"
+                            onchange="loadFuzzingResults()">
+                            <option value="">All Status</option>
+                            <option value="2xx">2xx Success</option>
+                            <option value="3xx">3xx Redirect</option>
+                            <option value="4xx">4xx Client Error</option>
+                        </select>
+                        <input type="text" id="fuzzSearch" class="form-input" placeholder="Search paths..."
+                            style="width: 200px;" onkeyup="loadFuzzingResults()">
+                    </div>
+                    <button onclick="startFuzzing()" class="btn btn-primary btn-sm" id="startFuzzBtn">Start
+                        Fuzzing</button>
+                </div>
+
+                <div id="fuzzingResults">
+                    <p style="text-align: center; color: var(--text-secondary);">Click "Start Fuzzing" to begin</p>
+                </div>
+            </div>
+
+            <!-- Tab 3: Crawler -->
+            <div id="crawlerTab" class="tab-content">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                    <h4>Discovered URLs & Endpoints</h4>
+                    <button onclick="startCrawler()" class="btn btn-primary btn-sm" id="startCrawlerBtn">Start
+                        Crawler</button>
+                </div>
+
+                <div id="crawlerResults">
+                    <p style="text-align: center; color: var(--text-secondary);">Click "Start Crawler" to begin</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .sliding-window {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1000;
+    }
+
+    .sliding-window-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+    }
+
+    .sliding-window-content {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 60%;
+        height: 100%;
+        background: var(--card-bg);
+        box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+        display: flex;
+        flex-direction: column;
+        animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+        }
+
+        to {
+            transform: translateX(0);
+        }
+    }
+
+    .sliding-window-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .btn-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: var(--text-secondary);
+        padding: 0.5rem;
+    }
+
+    .btn-close:hover {
+        color: var(--danger);
+    }
+
+    .sliding-window-tabs {
+        display: flex;
+        gap: 0.5rem;
+        padding: 1rem 1.5rem 0;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+        padding: 0.75rem 1.5rem;
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        color: var(--text-secondary);
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .tab-btn.active {
+        color: var(--primary);
+        border-bottom-color: var(--primary);
+    }
+
+    .sliding-window-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+
+    .detail-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .detail-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+
+    .detail-value {
+        font-size: 1rem;
+        color: var(--text-primary);
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    .tech-stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .tech-badge {
+        padding: 0.5rem 1rem;
+        background: var(--primary-alpha);
+        color: var(--primary);
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    .loading {
+        text-align: center;
+        padding: 2rem;
+        color: var(--text-secondary);
+    }
+
+    .badge-new {
+        background: var(--success-alpha);
+        color: var(--success);
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    @keyframes pulse {
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.3;
+        }
+    }
+</style>
+
+<script>
+    let currentScanId = '';
+    let currentDomain = '';
+
+    let pollInterval = null;
+
+    async function loadSubdomains() {
+        let scanId = $('#scanIdInput').value.trim();
+        if (!scanId) {
+            scanId = 'all'; // Default to global search
+        }
+
+        currentScanId = scanId;
+        const search = $('#searchInput').value;
+        const source = $('#filterSelect').value;
+        const status = $('#mainStatusFilter').value;
+
+        const params = new URLSearchParams();
+        if (search) params.append('search', search);
+        if (source) params.append('source', source);
+        if (status) params.append('status', status);
+
+        // Show loading state
+        const loadBtn = document.querySelector('button[onclick="loadSubdomains()"]');
+        const originalText = loadBtn ? loadBtn.textContent : 'Load';
+        if (loadBtn) {
+            loadBtn.disabled = true;
+            loadBtn.textContent = 'Loading...';
+        }
+
+        try {
+            const response = await fetch(`/subdomains/list/${scanId}?${params}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                displaySubdomains(data.subdomains);
+            } else {
+                const errorMsg = 'Error loading subdomains: ' + (data.error || 'Unknown error');
+                console.error(errorMsg);
+                alert(errorMsg);
+            }
+        } catch (error) {
+            const errorMsg = 'Failed to load subdomains: ' + error.message;
+            console.error(errorMsg);
+            alert(errorMsg);
+        } finally {
+            // Restore button state
+            if (loadBtn) {
+                loadBtn.disabled = false;
+                loadBtn.textContent = originalText;
+            }
+        }
+    }
+
+    function toggleAutoRefresh(checkbox) {
+        const label = checkbox.parentElement;
+        if (checkbox.checked) {
+            pollInterval = setInterval(loadSubdomains, 4000);
+            loadSubdomains(); // Trigger immediately
+            // Add visual indicator
+            label.style.color = 'var(--success)';
+            label.innerHTML = '<input type="checkbox" checked onchange="toggleAutoRefresh(this)"> Auto Refresh <span style="display:inline-block;width:8px;height:8px;background:var(--success);border-radius:50%;margin-left:4px;animation:pulse 1.5s ease-in-out infinite;"></span>';
+        } else {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = null;
+            // Remove visual indicator
+            label.style.color = '';
+            label.innerHTML = '<input type="checkbox" onchange="toggleAutoRefresh(this)"> Auto Refresh';
+        }
+    }
+
+    // Auto-load on start
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSubdomains();
+    });
+
+    function displaySubdomains(subdomains) {
+        const tbody = $('#subdomainsBody');
+        tbody.innerHTML = '';
+
+        $('#totalCount').textContent = subdomains.length;
+
+        const newFromAsn = subdomains.filter(s => s.is_new_from_asn);
+        if (newFromAsn.length > 0) {
+            $('#newFromAsnBadge').style.display = 'inline-flex';
+            $('#newFromAsnCount').textContent = newFromAsn.length;
+        }
+
+        if (subdomains.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem;">No subdomains found</td></tr>';
+            return;
+        }
+
+        subdomains.forEach(sub => {
+            const row = document.createElement('tr');
+
+            // Determine status badge
+            let statusBadge = '<span class="badge badge-secondary">Unknown</span>';
+            if (sub.status_code) {
+                const code = sub.status_code;
+                let badgeClass = 'badge-secondary';
+                if (code >= 200 && code < 300) badgeClass = 'badge-success';
+                else if (code >= 300 && code < 400) badgeClass = 'badge-warning';
+                else if (code >= 400) badgeClass = 'badge-danger';
+                statusBadge = `<span class="badge ${badgeClass}">${code}</span>`;
+            }
+
+            row.innerHTML = `
+            <td>
+                ${sub.domain}
+                ${sub.is_new_from_asn ? '<span class="badge-new">NEW</span>' : ''}
+            </td>
+            <td><span class="badge badge-${sub.source === 'asn' ? 'warning' : 'info'}">${sub.source}</span></td>
+            <td>${statusBadge}</td>
+            <td>
+                <button onclick="openDomainDetails('${sub.domain}')" class="btn btn-sm btn-primary">View Details</button>
+            </td>
+        `;
+            tbody.appendChild(row);
+        });
+    }
+
+    async function openDomainDetails(domain) {
+        currentDomain = domain;
+        $('#windowDomain').textContent = domain;
+        $('#slidingWindow').style.display = 'block';
+
+        // Load details
+        switchTab('details');
+        await loadDomainDetails(domain);
+    }
+
+    function closeSlidingWindow() {
+        $('#slidingWindow').style.display = 'none';
+    }
+
+    function switchTab(tabName, buttonElement) {
+        // Update buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        if (buttonElement) {
+            buttonElement.classList.add('active');
+        } else {
+            // Fallback: find button by tab name
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.textContent.includes(tabName === 'details' ? 'Details' : tabName === 'fuzzing' ? 'Fuzzing' : 'Crawler')) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+
+        // Update content
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        $(`#${tabName}Tab`).classList.add('active');
+
+        // Load data if needed
+        if (tabName === 'fuzzing') {
+            loadFuzzingResults();
+        } else if (tabName === 'crawler') {
+            loadCrawlerResults();
+        }
+    }
+
+    async function loadDomainDetails(domain) {
+        $('#detailsLoading').style.display = 'block';
+        $('#detailsContent').style.display = 'none';
+
+        try {
+            const response = await fetch(`/subdomains/details/${currentScanId}/${domain}`);
+            const data = await response.json();
+
+            if (data.success) {
+                const details = data.details;
+                $('#detailIP').textContent = details.ip || 'N/A';
+                $('#detailStatus').textContent = details.status_code || 'N/A';
+                $('#detailServer').textContent = details.server || 'N/A';
+                $('#detailCMS').textContent = details.cms || 'None';
+
+                // Technologies
+                const techStack = $('#techStack');
+                techStack.innerHTML = details.technologies.map(t =>
+                    `<span class="tech-badge">${t}</span>`
+                ).join('');
+
+                // Frameworks
+                const frameworks = $('#frameworks');
+                frameworks.innerHTML = details.frameworks.map(f =>
+                    `<span class="tech-badge">${f}</span>`
+                ).join('') || '<span style="color: var(--text-secondary);">None detected</span>';
+
+                $('#detailsLoading').style.display = 'none';
+                $('#detailsContent').style.display = 'block';
+            }
+        } catch (error) {
+            $('#detailsLoading').textContent = 'Error loading details';
+        }
+    }
+
+    async function startFuzzing() {
+        $('#startFuzzBtn').disabled = true;
+        $('#startFuzzBtn').textContent = 'Fuzzing...';
+
+        try {
+            await fetch(`/fuzzing/start/${currentScanId}/${currentDomain}`, { method: 'POST' });
+            setTimeout(loadFuzzingResults, 2000);
+        } catch (error) {
+            alert('Error starting fuzzing: ' + error.message);
+        }
+    }
+
+    async function loadFuzzingResults() {
+        const statusFilter = $('#statusFilter').value;
+        const search = $('#fuzzSearch').value;
+
+        const params = new URLSearchParams();
+        if (statusFilter) params.append('status_filter', statusFilter);
+        if (search) params.append('search', search);
+
+        try {
+            const response = await fetch(`/fuzzing/results/${currentScanId}/${currentDomain}?${params}`);
+            const data = await response.json();
+
+            if (data.success) {
+                displayFuzzingResults(data.results, data.status);
+            }
+        } catch (error) {
+            console.error('Error loading fuzzing results:', error);
+        }
+    }
+
+    function displayFuzzingResults(results, status) {
+        const container = $('#fuzzingResults');
+
+        if (status === 'running') {
+            container.innerHTML = '<p class="loading">Fuzzing in progress...</p>';
+            setTimeout(loadFuzzingResults, 3000);
+            return;
+        }
+
+        if (results.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No results found</p>';
+            return;
+        }
+
+        container.innerHTML = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>URL</th>
+                    <th>Status</th>
+                    <th>Length</th>
+                    <th>Type</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${results.map(r => `
+                    <tr>
+                        <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.875rem;">${r.url}</td>
+                        <td><span class="badge badge-${r.status < 300 ? 'success' : r.status < 400 ? 'warning' : 'danger'}">${r.status}</span></td>
+                        <td>${r.length || 'N/A'}</td>
+                        <td>${r.type || 'N/A'}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+        $('#startFuzzBtn').disabled = false;
+        $('#startFuzzBtn').textContent = 'Restart Fuzzing';
+    }
+
+    async function startCrawler() {
+        $('#startCrawlerBtn').disabled = true;
+        $('#startCrawlerBtn').textContent = 'Crawling...';
+
+        try {
+            await fetch(`/crawler/start/${currentScanId}/${currentDomain}`, { method: 'POST' });
+            setTimeout(loadCrawlerResults, 3000);
+        } catch (error) {
+            alert('Error starting crawler: ' + error.message);
+        }
+    }
+
+    async function loadCrawlerResults() {
+        try {
+            const response = await fetch(`/crawler/results/${currentScanId}/${currentDomain}`);
+            const data = await response.json();
+
+            if (data.success) {
+                displayCrawlerResults(data.results);
+            } else {
+                setTimeout(loadCrawlerResults, 3000);
+            }
+        } catch (error) {
+            console.error('Error loading crawler results:', error);
+        }
+    }
+
+    function displayCrawlerResults(results) {
+        const container = $('#crawlerResults');
+
+        if (results.error) {
+            container.innerHTML = `<p style="color: var(--danger);">Error: ${results.error}</p>`;
+            $('#startCrawlerBtn').disabled = false;
+            $('#startCrawlerBtn').textContent = 'Retry';
+            return;
+        }
+
+        container.innerHTML = `
+        <div style="margin-bottom: 1.5rem;">
+            <h5>URLs Found: ${results.urls.length}</h5>
+            <div style="max-height: 200px; overflow-y: auto; background: var(--bg); padding: 1rem; border-radius: 6px; margin-top: 0.5rem;">
+                ${results.urls.map(url => `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; margin-bottom: 0.25rem;">${url}</div>`).join('')}
+            </div>
+        </div>
+        
+        <div>
+            <h5>API Endpoints: ${results.endpoints.length}</h5>
+            <div style="max-height: 200px; overflow-y: auto; background: var(--bg); padding: 1rem; border-radius: 6px; margin-top: 0.5rem;">
+                ${results.endpoints.map(ep => `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.875rem; margin-bottom: 0.25rem; color: var(--success);">${ep}</div>`).join('') || '<span style="color: var(--text-secondary);">None found</span>'}
+            </div>
+        </div>
+    `;
+
+        $('#startCrawlerBtn').disabled = false;
+        $('#startCrawlerBtn').textContent = 'Restart Crawler';
+    }
+</script>
+{% endblock %}

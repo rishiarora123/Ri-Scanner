@@ -79,18 +79,7 @@ TOOLS: Dict[str, Tool] = {
         },
         usage_template="assetfinder --subs-only {domain}"
     ),
-    "findomain": Tool(
-        id="findomain",
-        name="Findomain",
-        category="subdomain",
-        description="Cross-platform subdomain enumerator written in Rust",
-        check_cmd=["findomain", "--version"],
-        install_cmds={
-            "brew": "brew install findomain",
-            "cargo": "cargo install findomain"
-        },
-        usage_template="findomain -t {domain} -q"
-    ),
+
     "chaos": Tool(
         id="chaos",
         name="Chaos",
@@ -105,17 +94,7 @@ TOOLS: Dict[str, Tool] = {
         api_url="https://chaos.projectdiscovery.io",
         usage_template="chaos -d {domain} -silent"
     ),
-    "knockpy": Tool(
-        id="knockpy",
-        name="Knockpy",
-        category="subdomain",
-        description="Subdomain scanner with integrated wordlist",
-        check_cmd=["knockpy", "--help"],
-        install_cmds={
-            "pip": "pip install knockpy"
-        },
-        usage_template="knockpy {domain}"
-    ),
+
     "fierce": Tool(
         id="fierce",
         name="Fierce",
@@ -161,17 +140,7 @@ TOOLS: Dict[str, Tool] = {
         },
         usage_template="sublist3r -d {domain}"
     ),
-    "massdns": Tool(
-        id="massdns",
-        name="MassDNS",
-        category="subdomain",
-        description="High-performance DNS stub resolver for bulk lookups",
-        check_cmd=["massdns", "--help"],
-        install_cmds={
-            "brew": "brew install massdns"
-        },
-        usage_template="massdns -r resolvers.txt -t A -o S {wordlist}"
-    ),
+
     "altdns": Tool(
         id="altdns",
         name="Altdns",
@@ -227,51 +196,16 @@ TOOLS: Dict[str, Tool] = {
         id="facebookct",
         name="Facebook CT",
         category="cert",
-        description="Facebook Certificate Transparency monitor",
+        description="Facebook Certificate Transparency monitor (deprecated - use crt.sh instead)",
         is_api_only=True,
-        requires_api=True,
-        api_keys=["FACEBOOK_CT_TOKEN"],
-        api_url="https://developers.facebook.com/tools/ct",
-        usage_template="API call to Facebook CT"
+        requires_api=False,  # No longer requires API - deprecated service
+        api_keys=[],
+        api_url="https://developers.facebook.com/docs/certificate-transparency",
+        usage_template="Use crt.sh instead - Facebook CT deprecated"
     ),
 
     # ==================== ORIGIN IP DISCOVERY ====================
-    "cloudflair": Tool(
-        id="cloudflair",
-        name="CloudFlair",
-        category="origin_ip",
-        description="Find origin servers behind Cloudflare using Censys",
-        check_cmd=["cloudflair", "--help"],
-        install_cmds={
-            "pip": "pip install cloudflair"
-        },
-        requires_api=True,
-        api_keys=["CENSYS_API_ID", "CENSYS_API_SECRET"],
-        api_url="https://search.censys.io/account/api",
-        usage_template="cloudflair {domain}"
-    ),
-    "cloudfail": Tool(
-        id="cloudfail",
-        name="CloudFail",
-        category="origin_ip",
-        description="Unmask Cloudflare protected hosts",
-        check_cmd=["cloudfail", "--help"],
-        install_cmds={
-            "pip": "pip install cloudfail"
-        },
-        usage_template="cloudfail -t {domain}"
-    ),
-    "bypasscdn": Tool(
-        id="bypasscdn",
-        name="Bypass-CDN",
-        category="origin_ip",
-        description="Bypass CDN to find origin IP addresses",
-        check_cmd=["bypass-cdn", "--help"],
-        install_cmds={
-            "git": "git clone https://github.com/AzR919/bypass-cdn.git"
-        },
-        usage_template="python bypass-cdn.py -d {domain}"
-    ),
+
     "dnsrecon": Tool(
         id="dnsrecon",
         name="DNSRecon",
@@ -284,17 +218,7 @@ TOOLS: Dict[str, Tool] = {
         },
         usage_template="dnsrecon -d {domain}"
     ),
-    "dnsenum": Tool(
-        id="dnsenum",
-        name="DNSEnum",
-        category="origin_ip",
-        description="DNS enumeration tool",
-        check_cmd=["dnsenum", "--help"],
-        install_cmds={
-            "brew": "brew install dnsenum"
-        },
-        usage_template="dnsenum {domain}"
-    ),
+
 
     # ==================== PORT SCANNING ====================
     "nmap": Tool(
@@ -350,20 +274,7 @@ TOOLS: Dict[str, Tool] = {
         api_url="https://account.shodan.io",
         usage_template="shodan search hostname:{domain}"
     ),
-    "censys": Tool(
-        id="censys",
-        name="Censys",
-        category="search_engine",
-        description="Internet-wide scanning and data platform",
-        check_cmd=["censys", "search", "--help"],
-        install_cmds={
-            "pip": "pip install censys"
-        },
-        requires_api=True,
-        api_keys=["CENSYS_API_ID", "CENSYS_API_SECRET"],
-        api_url="https://search.censys.io/account/api",
-        usage_template="censys search {query}"
-    ),
+
     "zoomeye": Tool(
         id="zoomeye",
         name="ZoomEye",
@@ -443,17 +354,7 @@ TOOLS: Dict[str, Tool] = {
         },
         usage_template="katana -u {url}"
     ),
-    "linkfinder": Tool(
-        id="linkfinder",
-        name="LinkFinder",
-        category="url_discovery",
-        description="Find endpoints in JavaScript files",
-        check_cmd=["linkfinder", "--help"],
-        install_cmds={
-            "pip": "pip install linkfinder"
-        },
-        usage_template="linkfinder -i {url} -o cli"
-    ),
+
     "jsfinder": Tool(
         id="jsfinder",
         name="JSFinder",
@@ -467,17 +368,7 @@ TOOLS: Dict[str, Tool] = {
     ),
 
     # ==================== RECON FRAMEWORKS ====================
-    "reconng": Tool(
-        id="reconng",
-        name="Recon-ng",
-        category="framework",
-        description="Full-featured web reconnaissance framework",
-        check_cmd=["recon-ng", "--help"],
-        install_cmds={
-            "pip": "pip install recon-ng"
-        },
-        usage_template="recon-ng"
-    ),
+
     "osmedeus": Tool(
         id="osmedeus",
         name="Osmedeus",
@@ -489,28 +380,7 @@ TOOLS: Dict[str, Tool] = {
         },
         usage_template="osmedeus scan -t {domain}"
     ),
-    "sn1per": Tool(
-        id="sn1per",
-        name="Sn1per",
-        category="framework",
-        description="Automated pentesting reconnaissance scanner",
-        check_cmd=["sniper", "--help"],
-        install_cmds={
-            "git": "git clone https://github.com/1N3/Sn1per && cd Sn1per && sudo bash install.sh"
-        },
-        usage_template="sniper -t {domain}"
-    ),
-    "aquatone": Tool(
-        id="aquatone",
-        name="Aquatone",
-        category="framework",
-        description="Visual inspection of websites across many hosts",
-        check_cmd=["aquatone", "-version"],
-        install_cmds={
-            "go": "go install -v github.com/michenriksen/aquatone@latest"
-        },
-        usage_template="cat urls.txt | aquatone"
-    ),
+
 }
 
 
