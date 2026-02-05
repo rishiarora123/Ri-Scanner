@@ -358,27 +358,70 @@ def get_logs_route():
 
 @main_bp.route("/search/title", methods=["GET"])
 def search_title():
-    """Legacy search endpoint for results.html"""
+    """Legacy search endpoint for results.html - searches MongoDB for scan results"""
     query = request.args.get("q", "")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
     
-    manager = get_subdomain_manager()
-    results = manager.search_all_subdomains(query, limit=per_page * page)
+    results = []
     
-    # Format for results.html (it expects specific fields)
-    formatted = []
-    for r in results:
-        formatted.append({
-            "domain": r.get("domain"),
-            "ip": "N/A",  # Details might be missing in basic list
-            "title": f"Subdomain: {r.get('domain')}",
-            "status_code": 200,
-            "technologies": [],
-            "source": r.get("source", "recon")
-        })
+    # Try MongoDB first for actual scan results
+    try:
+        if hasattr(current_app, 'db') and current_app.db is not None:
+            # Search in scans collection
+            if query:
+                # Search with regex pattern
+                pipeline = [
+                    {"$match": {
+                        "$or": [
+                            {"title": {"$regex": query, "$options": "i"}},
+                            {"domain": {"$regex": query, "$options": "i"}},
+                            {"ip": {"$regex": query, "$options": "i"}}
+                        ]
+                    }},
+                    {"$limit": per_page * page}
+                ]
+                cursor = current_app.db.results.find({
+                    "$or": [
+                        {"title": {"$regex": query, "$options": "i"}},
+                        {"domain": {"$regex": query, "$options": "i"}},
+                        {"ip": {"$regex": query, "$options": "i"}}
+                    ]
+                }).limit(per_page * page)
+            else:
+                # Get all results
+                cursor = current_app.db.results.find().limit(per_page * page)
+            
+            results = list(cursor)
+            
+            # Clean up MongoDB _id field
+            for r in results:
+                if '_id' in r:
+                    del r['_id']
+                    
+    except Exception as e:
+        print(f"MongoDB search error: {e}")
+    
+    # If no MongoDB results, fallback to subdomain search
+    if not results:
+        manager = get_subdomain_manager()
+        subdomains = manager.search_all_subdomains(query, limit=per_page * page)
         
-    return jsonify(formatted)
+        # Format for results.html (it expects specific fields)
+        for r in subdomains:
+            results.append({
+                "domain": r.get("domain"),
+                "ip": r.get("ip", "N/A"),
+                "title": f"Subdomain: {r.get('domain')}",
+                "status_code": r.get("status_code", 200),
+                "technologies": r.get("technologies", []),
+                "source": r.get("source", "recon"),
+                "port": r.get("port", "N/A"),
+                "request": f"https://{r.get('domain')}",
+                "favicon_hash": r.get("favicon_hash", "N/A")
+            })
+        
+    return jsonify(results)
 
 @main_bp.route("/insert", methods=["POST"])
 def insert_results():
@@ -442,30 +485,70 @@ def export_results():
 
 @main_bp.route("/search/advanced", methods=["POST"])
 def search_advanced():
-    """Advanced search endpoint."""
+    """Advanced search endpoint with MongoDB support"""
     data = request.get_json()
     filters = data.get("filters", [])
-    # Simplified implementation mapping to global search for now
-    query = ""
-    for f in filters:
-        if f["field"] == "domain" or f["field"] == "title":
-            query = f["value"]
-            break
-            
-    manager = get_subdomain_manager()
-    results = manager.search_all_subdomains(query, limit=100)
     
-    formatted = []
-    for r in results:
-        formatted.append({
-            "domain": r.get("domain"),
-            "ip": r.get("ip", "N/A"),
-            "title": f"Subdomain: {r.get('domain')}",
-            "status_code": r.get("status_code", 200),
-            "technologies": r.get("technologies", []),
-            "source": r.get("source", "recon")
-        })
-    return jsonify(formatted)
+    results = []
+    
+    # Try MongoDB first
+    try:
+        if hasattr(current_app, 'db') and current_app.db is not None:
+            mongo_query = {}
+            
+            for f in filters:
+                field = f.get("field")
+                operator = f.get("operator")
+                value = f.get("value")
+                
+                if not value.strip():
+                    continue
+                
+                if operator == "contains":
+                    mongo_query[field] = {"$regex": value, "$options": "i"}
+                elif operator == "not_contains":
+                    mongo_query[field] = {"$not": {"$regex": value, "$options": "i"}}
+                elif operator == "equals":
+                    mongo_query[field] = value
+                elif operator == "not_equals":
+                    mongo_query[field] = {"$ne": value}
+            
+            cursor = current_app.db.results.find(mongo_query).limit(100)
+            results = list(cursor)
+            
+            # Clean up MongoDB _id field
+            for r in results:
+                if '_id' in r:
+                    del r['_id']
+                    
+    except Exception as e:
+        print(f"MongoDB advanced search error: {e}")
+    
+    # Fallback to simple subdomain search
+    if not results:
+        query = ""
+        for f in filters:
+            if f["field"] in ["domain", "title"]:
+                query = f["value"]
+                break
+                
+        manager = get_subdomain_manager()
+        subdomains = manager.search_all_subdomains(query, limit=100)
+        
+        for r in subdomains:
+            results.append({
+                "domain": r.get("domain"),
+                "ip": r.get("ip", "N/A"),
+                "title": f"Subdomain: {r.get('domain')}",
+                "status_code": r.get("status_code", 200),
+                "technologies": r.get("technologies", []),
+                "source": r.get("source", "recon"),
+                "port": r.get("port", "N/A"),
+                "request": f"https://{r.get('domain')}",
+                "favicon_hash": r.get("favicon_hash", "N/A")
+            })
+    
+    return jsonify(results)
 
 # ... (keep all other existing routes: fuzzing, results, settings, tools, etc.)
 
