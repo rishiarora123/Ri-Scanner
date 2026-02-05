@@ -4,7 +4,7 @@ Ri-Scanner Pro - Flask Application Factory
 Professional security reconnaissance tool with MongoDB integration.
 """
 import os
-from flask import Flask
+from flask import Flask, jsonify
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 
@@ -38,6 +38,17 @@ def create_app():
     # Register Blueprints
     from .routes import main_bp
     app.register_blueprint(main_bp)
+
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Global error handler to prevent HTML error pages in JSON API."""
+        # Log the error
+        app.logger.error(f"Global Error Catch: {str(e)}")
+        # Return JSON instead of HTML
+        return jsonify({
+            "error": "Internal Server Error",
+            "message": str(e)
+        }), 500
     
     return app
 

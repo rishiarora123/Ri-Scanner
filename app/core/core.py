@@ -14,15 +14,86 @@ import threading
 from .config import ScannerConfig
 from .ssl_helper import fetch_certificate
 from .http_helper import check_site
-from .utils import log_to_server
+from .utils import log_to_server, resolve_asn_to_ips
 
 def log_event(message, to_terminal=False):
     if to_terminal:
         print(message)
     log_to_server(message)
 
+
+async def run_enhanced_recon_tools(domain):
+    """
+    Run all available recon tools on domain and return aggregated results.
+    This uses the tools framework to run multiple tools and deduplicate results.
+    """
+    try:
+        from .recon_runner import get_recon_runner
+        
+        runner = get_recon_runner()
+        log_event(f"[*] Running enhanced recon tools on {domain}...")
+        
+        # Run subdomain enumeration with all available tools
+        results = await runner.run_subdomain_recon(domain)
+        
+        subdomains = results.get("subdomains", [])
+        tool_results = results.get("tool_results", {})
+        errors = results.get("errors", [])
+        
+        # Log results per tool
+        for tool_id, subs in tool_results.items():
+            if isinstance(subs, list):
+                log_event(f"[+] {tool_id}: Found {len(subs)} subdomains")
+        
+        # Log any errors
+        for err in errors:
+            log_event(f"[!] {err.get('tool', 'unknown')}: {err.get('error', 'Unknown error')}")
+        
+        log_event(f"[*] Total unique subdomains found: {len(subdomains)}")
+        
+        # Save aggregated results
+        output_dir = os.path.join("Tmp", f"{domain}_data")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        subdomains_file = os.path.join(output_dir, "all_subdomains.txt")
+        with open(subdomains_file, 'w') as f:
+            f.write('\n'.join(sorted(subdomains)))
+        log_event(f"[*] Saved {len(subdomains)} subdomains to {subdomains_file}")
+        
+        # Save per-tool results for reference
+        tools_results_file = os.path.join(output_dir, "recon_tools_results.json")
+        import json as json_module
+        with open(tools_results_file, 'w') as f:
+            json_module.dump({
+                "domain": domain,
+                "total_subdomains": len(subdomains),
+                "tool_counts": {k: len(v) if isinstance(v, list) else 0 for k, v in tool_results.items()},
+                "errors": errors
+            }, f, indent=2)
+        
+        return subdomains
+        
+    except ImportError as e:
+        log_event(f"[!] Enhanced recon not available: {e}")
+        return []
+    except Exception as e:
+        log_event(f"[!] Enhanced recon error: {e}")
+        return []
+
+
 def run_recon(domain, threads, bgp_url=None):
     log_event(f"[*] Starting Recon for {domain}...")
+    
+    # First, run enhanced recon tools to gather subdomains
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        subdomains = loop.run_until_complete(run_enhanced_recon_tools(domain))
+        loop.close()
+        log_event(f"[*] Enhanced recon gathered {len(subdomains)} unique subdomains")
+    except Exception as e:
+        log_event(f"[!] Enhanced recon failed, continuing with legacy: {e}")
+    
     try:
         # Assuming CWD is the project root, and we moved final_recon.sh to app/core/
         script_path = os.path.join("app", "core", "final_recon.sh")
@@ -43,6 +114,7 @@ def run_recon(domain, threads, bgp_url=None):
     except subprocess.CalledProcessError as e:
         log_event(f"[!] Recon script failed: {e}")
         return None
+
 
 def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_event=None):
     log_event(f"[*] Splitting IP list and running Masscan in parallel...")
@@ -134,39 +206,13 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
         except Exception:
             pass
 
-        cmd = f"sudo masscan -p443 --rate {config.masscan_rate} --wait 0 -iL '{input_path}' -oH '{output_path}'"
+        cmd = f"sudo masscan -p80,443,8080,8443,4443 --rate {config.masscan_rate} --wait 0 -iL '{input_path}' -oL '{output_path}'"
         try:
-             # Use Popen to capture progress output if possible
-             # Masscan usually outputs progress to stderr
-             process = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-             
-             # Read stderr for progress lines
-             while True:
-                 line = process.stderr.readline()
-                 if not line and process.poll() is not None:
-                     break
-                 
-                 # Look for progress like " 13.52% done"
-                 if "done" in line and "%" in line:
-                     try:
-                         # Extract percentage
-                         pct_match = re.search(r"(\d+\.\d+)%", line)
-                         if pct_match:
-                             pct = float(pct_match.group(1))
-                             processed = int((pct / 100.0) * chunk_info.get("total", 0))
-                             
-                             # Send update
-                             update_data = {"id": idx, "processed": processed}
-                             data = json.dumps({"chunk_update": update_data}).encode('utf-8')
-                             req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
-                             urllib.request.urlopen(req, timeout=1)
-                     except Exception:
-                         pass
-             
-             process.wait()
+             # Basic execution without real-time parsing to ensure stability as requested
+             subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=None) 
         except Exception as e:
             if "gaierror" not in str(e).lower():
-                log_event(f"[!] Masscan Chunk {idx} error: {e}")
+                log_to_server(f"[!] Masscan Chunk {idx} error: {e}")
         
         # Cleanup input file immediately to save space/inodes
         try:
@@ -208,7 +254,8 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
         }).encode('utf-8')
         req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=data, headers={'Content-Type': 'application/json'})
         urllib.request.urlopen(req)
-    except: pass
+    except Exception: 
+        pass
     
     # Restore High Concurrency - No Limits as requested
     max_masscan_workers = len(temp_files)
@@ -269,10 +316,9 @@ def split_and_run_masscan(ip_file, final_output_file, config, num_chunks, stop_e
 
     return temp_files
 
-async def process_ip(session, ip, config, ssl_context):
+async def process_ip(session, ip, port, config):
     async with config.semaphore:
-        _, common_name = await fetch_certificate(ip, config, ssl_context)
-        return await check_site(session, ip, common_name, config)
+        return await check_site(session, ip, port, config)
 
 async def extract_domains(config, stop_event=None):
     log_event("[*] Starting Domain Extraction and HTTP Probing...")
@@ -280,47 +326,53 @@ async def extract_domains(config, stop_event=None):
             log_event(f"[!] Masscan results file not found: {config.mass_scan_results_file}")
             return
 
-    with open(config.mass_scan_results_file, "r") as file:
-        content = file.read()
+    # Parse Masscan List results correctly (-oL format is merge-safe)
+    targets = []
+    try:
+        with open(config.mass_scan_results_file, "r") as f:
+            for line in f:
+                if line.startswith("open"):
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        # Format: open <proto> <port> <ip> <timestamp>
+                        port = parts[2]
+                        ip = parts[3]
+                        if ip and port:
+                            targets.append((ip, int(port)))
+    except Exception as e:
+        log_event(f"[!] Error parsing masscan results: {e}")
+        return
 
-    ip_pattern = r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"
-    ip_addresses = re.findall(ip_pattern, content)
-    total_ips = len(ip_addresses)
-    
-    log_event(f"[*] Found {total_ips} IPs with open ports. Processing...")
+    total_targets = len(targets)
+    log_event(f"[*] Found {total_targets} target services (IP:Port). Processing...")
 
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    
     start_time = time.time()
-
     async with aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(limit=config.MAX_CONCURRENT, ssl=False)
     ) as session:
         
-        # Reset extraction status
+        # Reset extraction status (async)
         try:
-            import urllib.request
-            urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5000/update_status", 
-                data=json.dumps({"phase": "Extraction", "extraction_total": total_ips, "extraction_progress": 0, "found_count": 0, "estimated_remaining": "Calculating..."}).encode('utf-8'), 
-                headers={'Content-Type': 'application/json'}), timeout=2)
+            async with session.post("http://127.0.0.1:5000/update_status", 
+                json={"phase": "Extraction", "extraction_total": total_targets, "extraction_progress": 0, "found_count": 0, "estimated_remaining": "Calculating..."}, 
+                timeout=2) as r:
+                pass
         except Exception:
             pass
 
         active_tasks = 0
         
-        async def tracked_process_ip(session, ip, config, ssl_context):
+        async def tracked_process_ip(session, ip, port, config):
             nonlocal active_tasks
             active_tasks += 1
             try:
-                return await process_ip(session, ip, config, ssl_context)
+                return await process_ip(session, ip, port, config)
             finally:
                 active_tasks -= 1
 
         tasks = []
-        for ip in ip_addresses:
-            tasks.append(tracked_process_ip(session, ip, config, ssl_context))
+        for ip, port in targets:
+            tasks.append(tracked_process_ip(session, ip, port, config))
         
         completed_count = 0
         found_count = 0
@@ -334,35 +386,36 @@ async def extract_domains(config, stop_event=None):
             
             if result:
                 found_count += 1
-                log_event(f"FOUND: {result.get('title', 'No Title')} - {result.get('request')}")
+                # result is { 'http_responseForIP': { ... } }
+                inner_key = next(iter(result.keys()))
+                inner_res = result[inner_key]
+                log_event(f"FOUND: {inner_res.get('title', 'No Title')} - {inner_res.get('request')}")
                 batch_results.append(result)
             
-            if completed_count % 10 == 0 or completed_count == total_ips:
+            if completed_count % 10 == 0 or completed_count == total_targets:
                 # Calculate ETR
                 elapsed = time.time() - start_time
                 etr_str = "Calculating..."
                 if completed_count > 0:
                     rate = completed_count / elapsed
                     if rate > 0:
-                        remaining_ips = total_ips - completed_count
-                        etr_seconds = remaining_ips / rate
+                        remaining_targets = total_targets - completed_count
+                        etr_seconds = remaining_targets / rate
                         if etr_seconds > 60:
                             etr_str = f"{int(etr_seconds // 60)}m {int(etr_seconds % 60)}s"
                         else:
                             etr_str = f"{int(etr_seconds)}s"
 
                 try:
-                    import urllib.request
-                    import json
-                    # Send active_threads
-                    urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5000/update_status", 
-                        data=json.dumps({
+                    # Send active_threads (Non-blocking)
+                    asyncio.create_task(session.post("http://127.0.0.1:5000/update_status", 
+                        json={
                             "extraction_progress": completed_count, 
+                            "extraction_total": total_targets,
                             "found_count": found_count, 
                             "active_threads": active_tasks,
                             "estimated_remaining": etr_str
-                        }).encode('utf-8'), 
-                        headers={'Content-Type': 'application/json'}), timeout=2)
+                        }, timeout=2))
                 except Exception:
                     pass
 
@@ -370,7 +423,7 @@ async def extract_domains(config, stop_event=None):
                 try:
                     async with session.post(config.server_url, data=json.dumps(batch_results), headers={"Content-Type": "application/json"}, ssl=False) as res:
                         pass
-                except aiohttp.ClientError:
+                except Exception:
                     pass
                 batch_results = []
 
@@ -421,6 +474,36 @@ async def run_scan_logic(mode, target_input, threads=50, bgp_url=None, masscan_r
             chunk_temps = split_and_run_masscan(config.ips_file, config.mass_scan_results_file, config, masscan_chunks, stop_event)
             temp_files_to_clean.extend(chunk_temps)
 
+        elif mode == 'asn_list':
+            # Resolve ASNs to IPs
+            log_event("[*] Expanding ASNs to IP ranges...")
+            asns = re.split(r'[,\s]+', target_input)
+            all_ips = []
+            for asn in asns:
+                if asn.strip():
+                    ips = resolve_asn_to_ips(asn.strip())
+                    all_ips.extend(ips)
+                    log_event(f"[*] {asn.strip()}: Found {len(ips)} prefixes")
+            
+            if not all_ips:
+                log_event("[!] No IP ranges found for the provided ASNs.")
+                return
+
+            # Create a temporary IP list file
+            if not os.path.exists("Tmp"): os.makedirs("Tmp")
+            asn_ip_file = os.path.join("Tmp", f"asn_ips_{int(time.time())}.txt")
+            with open(asn_ip_file, 'w') as f:
+                f.write('\n'.join(all_ips))
+            
+            config.ips_file = asn_ip_file
+            temp_files_to_clean.append(asn_ip_file)
+            
+            config.mass_scan_results_file = os.path.join("Tmp", f"masscan_from_asn_{int(time.time())}.txt")
+            json_export_path = os.path.join("Tmp", f"asn_scan_json_{int(time.time())}.json")
+            
+            chunk_temps = split_and_run_masscan(config.ips_file, config.mass_scan_results_file, config, masscan_chunks, stop_event)
+            temp_files_to_clean.extend(chunk_temps)
+
         if not (stop_event and stop_event.is_set()):
             await extract_domains(config, stop_event)
             
@@ -461,8 +544,8 @@ async def run_scan_logic(mode, target_input, threads=50, bgp_url=None, masscan_r
                 
                 if mode == 'ip_file' and os.path.exists(config.mass_scan_results_file):
                     try: os.remove(config.mass_scan_results_file)
-                    except: pass
+                    except OSError: pass
                 
                 if target_input and "Tmp" in target_input and os.path.exists(target_input):
                     try: os.remove(target_input)
-                    except: pass
+                    except OSError: pass

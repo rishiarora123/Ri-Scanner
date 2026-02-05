@@ -92,6 +92,80 @@
             </button>
         </form>
     </div>
+
+    <!-- ASN List Card -->
+    <div class="glass card">
+        <div class="card-header">
+            <h2 style="color: #a855f7;">4. From ASN List</h2>
+            <p class="card-description">Input a list of ASNs (e.g. AS15169). Will resolve to IPs then scan.</p>
+        </div>
+        <form id="form-asn" onsubmit="startScan(event, 'asn_list', this)">
+            <div class="form-group">
+                <label class="form-label">ASN List (Comma or Space separated)</label>
+                <textarea name="asns" class="form-input" placeholder="AS15169, AS16509"
+                    style="height: 100px; resize: vertical;" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Masscan Rate</label>
+                <input type="number" name="masscan_rate" class="form-input" value="10000">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Chunks (0=Auto)</label>
+                <input type="number" name="masscan_chunks" class="form-input" value="0">
+            </div>
+
+            <button type="submit" class="btn btn-full" style="background: var(--accent); color: white;">
+                <span class="btn-text">Start ASN Scan</span>
+                <span class="spinner hidden"></span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Recon Tools Overview Section -->
+<div class="glass card mt-lg" style="margin-top: 2rem;">
+    <div class="card-header text-center">
+        <h2 style="color: var(--primary);">🧰 Recon Tools Available</h2>
+        <p class="card-description">
+            40+ reconnaissance tools integrated for comprehensive scanning.
+            <a href="/settings" style="color: var(--primary);">Configure API keys & view status →</a>
+        </p>
+    </div>
+
+    <div class="grid-3" style="padding: 1rem;">
+        <div class="stat-card">
+            <div class="stat-value" style="font-size: 1.5rem;">🔍</div>
+            <div class="stat-label">Subdomain Tools</div>
+            <div class="text-muted" style="font-size: 0.8rem;">Subfinder, Amass, Chaos, DNSx, +9 more</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size: 1.5rem;">🛰️</div>
+            <div class="stat-label">Search Engines</div>
+            <div class="text-muted" style="font-size: 0.8rem;">Shodan, Censys, ZoomEye, FOFA, SecurityTrails</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size: 1.5rem;">🌐</div>
+            <div class="stat-label">CT Logs</div>
+            <div class="text-muted" style="font-size: 0.8rem;">crt.sh, Certspotter, Bufferover</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size: 1.5rem;">🌍</div>
+            <div class="stat-label">Origin IP Discovery</div>
+            <div class="text-muted" style="font-size: 0.8rem;">CloudFlair, CloudFail, DNSRecon</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size: 1.5rem;">🔗</div>
+            <div class="stat-label">URL Discovery</div>
+            <div class="text-muted" style="font-size: 0.8rem;">Waybackurls, GAU, Katana, Hakrawler</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="font-size: 1.5rem;">🧰</div>
+            <div class="stat-label">Frameworks</div>
+            <div class="text-muted" style="font-size: 0.8rem;">Recon-ng, Osmedeus, Sn1per, Aquatone</div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 

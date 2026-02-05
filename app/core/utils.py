@@ -27,3 +27,34 @@ def log_to_server(message):
         except Exception:
             pass
     threading.Thread(target=_send, daemon=True).start()
+
+def resolve_asn_to_ips(asn):
+    """
+    Resolve ASN to a list of IP prefixes using whois.
+    Example: AS15169 -> ['8.8.8.0/24', ...]
+    """
+    import subprocess
+    asn = asn.upper().strip()
+    if not asn.startswith("AS"):
+        asn = f"AS{asn}"
+    
+    # Extract just the number for query
+    asn_num = asn.replace("AS", "")
+        
+    try:
+        # Using RADB for ASN prefix resolution
+        # Use separate arguments for better cross-platform compatibility
+        cmd = ["whois", "-h", "whois.radb.net", f"-i origin AS{asn_num}"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        
+        prefixes = []
+        if result.returncode == 0:
+            # Extract prefixes from the 'route:' or 'route6:' fields
+            pattern = r"route6?:\s*([^\s]+)"
+            prefixes = re.findall(pattern, result.stdout)
+            
+        return list(set(prefixes))  # Remove duplicates
+    except subprocess.TimeoutExpired:
+        return []
+    except Exception:
+        return []

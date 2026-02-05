@@ -92,57 +92,57 @@
 
 {% block scripts %}
 <style>
-    .chunk-item {
-        background: rgba(16, 185, 129, 0.15);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        border-radius: var(--radius-sm);
-        padding: 0.5rem 0.75rem;
-        margin-bottom: 0.5rem;
-        cursor: pointer;
-        transition: all var(--transition-fast);
+    #chunk-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+        gap: 6px;
+        margin-top: 1rem;
     }
 
-    .chunk-item:hover {
-        background: rgba(16, 185, 129, 0.25);
-        border-color: rgba(16, 185, 129, 0.5);
-    }
-
-    .chunk-item.expanded {
+    .chunk-cube {
+        width: 24px;
+        height: 24px;
         background: rgba(16, 185, 129, 0.2);
-    }
-
-    .chunk-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .chunk-id {
-        font-weight: 600;
-        color: var(--success);
-        font-size: 0.9rem;
-    }
-
-    .chunk-status {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        padding: 2px 6px;
+        border: 1px solid rgba(16, 185, 129, 0.4);
         border-radius: 4px;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+    }
+
+    .chunk-cube:hover {
         background: var(--success);
+        transform: scale(1.1);
+        z-index: 10;
+    }
+
+    .chunk-cube.running {
+        background: var(--success);
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+        animation: pulse 2s infinite;
+    }
+
+    .chunk-tooltip {
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.9);
         color: white;
-        animation: pulse 1.5s ease-in-out infinite;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+        margin-bottom: 5px;
+        border: 1px solid var(--glass-border);
+        z-index: 100;
     }
 
-    .chunk-details {
-        display: none;
-        margin-top: 0.5rem;
-        padding-top: 0.5rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
-        font-size: 0.8rem;
-    }
-
-    .chunk-item.expanded .chunk-details {
-        display: block;
+    .chunk-cube:hover .chunk-tooltip {
+        opacity: 1;
     }
 
     .chunk-detail-row {
@@ -221,17 +221,17 @@
     }
 
     function renderActiveChunks(chunks) {
-        // Filter only running chunks (not completed, not pending)
+        // Filter only running chunks
         const activeChunks = chunks.filter(c => c.status === 'running');
 
-        document.getElementById('active-chunk-count').innerText = `${activeChunks.length} running`;
+        document.getElementById('active-chunk-count').innerText = `${activeChunks.length} active`;
 
         const container = document.getElementById('chunk-list');
 
         if (activeChunks.length === 0) {
             const hasCompleted = chunks.some(c => c.status === 'completed');
             container.innerHTML = `
-            <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.85rem;">
+            <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.85rem; grid-column: 1 / -1;">
                 ${hasCompleted ? 'All chunks completed!' : 'Waiting for chunks...'}
             </div>
         `;
@@ -239,40 +239,9 @@
         }
 
         container.innerHTML = activeChunks.map(chunk => {
-            const isExpanded = expandedChunks.has(chunk.id);
-            const progressPct = chunk.total > 0 ? (chunk.processed / chunk.total * 100) : 0;
-
             return `
-            <div class="chunk-item ${isExpanded ? 'expanded' : ''}" onclick="toggleChunk(${chunk.id})">
-                <div class="chunk-header">
-                    <span class="chunk-id">Chunk #${chunk.id + 1}</span>
-                    <span class="chunk-status">Running</span>
-                </div>
-                <div class="chunk-details">
-                    <div class="chunk-detail-row">
-                        <span>First Range:</span>
-                        <span>${chunk.first_range || 'N/A'}</span>
-                    </div>
-                    <div class="chunk-detail-row">
-                        <span>Last Range:</span>
-                        <span>${chunk.last_range || 'N/A'}</span>
-                    </div>
-                    <div class="chunk-detail-row">
-                        <span>Total Ranges:</span>
-                        <span>${chunk.total || 0}</span>
-                    </div>
-                    <div class="chunk-detail-row">
-                        <span>Processed:</span>
-                        <span>${chunk.processed || 0}</span>
-                    </div>
-                    <div class="chunk-detail-row">
-                        <span>Remaining:</span>
-                        <span>${Math.max(0, (chunk.total || 0) - (chunk.processed || 0))}</span>
-                    </div>
-                    <div class="chunk-progress">
-                        <div class="chunk-progress-fill" style="width: ${progressPct}%;"></div>
-                    </div>
-                </div>
+            <div class="chunk-cube running">
+                <div class="chunk-tooltip">Chunk #${chunk.id + 1}</div>
             </div>
         `;
         }).join('');

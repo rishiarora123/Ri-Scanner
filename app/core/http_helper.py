@@ -14,66 +14,135 @@ import codecs
 
 from .utils import is_valid_domain, log_to_server
 from .jarm_helper import get_jarm_hash
+from .ssl_helper import parse_certificate
 
 
 # Pre-compiled strainer for HTML parsing (reuse for performance)
 _HTML_STRAINER = SoupStrainer(["title", "body"])
 
-# Technology detection signatures (Expanded)
+# Technology detection signatures (Comprehensive Stack)
 TECH_SIGNATURES = {
     "header": {
+        # Backend Languages & Frameworks
         "PHP": ["PHP", "X-PHP-Originating-Script"],
-        "ASP.NET": ["ASP.NET", "X-AspNet-Version"],
-        "Express.js": ["Express"],
+        "ASP.NET": ["ASP.NET", "X-AspNet-Version", "X-Powered-By: ASP.NET"],
+        "ASP.NET Core": ["X-Powered-By: ASP.NET Core"],
+        "Express.js": ["X-Powered-By: Express"],
+        "Django": ["csrftoken", "X-Powered-By: Django"],
+        "Flask": ["X-Powered-By: Flask"],
+        "FastAPI": ["X-Powered-By: FastAPI"],
+        "NestJS": ["X-Powered-By: NestJS"],
+        "Ruby on Rails": ["X-Powered-By: Phusion Passenger", "X-Runtime"],
+        "Laravel": ["laravel_session", "X-Powered-By: Laravel"],
+        "Symfony": ["X-Powered-By: Symfony"],
+        "Spring Boot": ["X-Application-Context"],
+        "Node.js": ["X-Powered-By: Node.js"],
+        
+        # Web Servers
         "Nginx": ["nginx"],
         "Apache": ["apache", "Httpd"],
-        "Cloudflare CDN": ["cloudflare"],
-        "IIS": ["microsoft-iis"],
-        "Django": ["csrftoken"],
-        "Litespeed": ["litespeed"],
-        "Next.js": ["x-nextjs-cache", "x-powered-by: next.js"],
-        "Nuxt.js": ["x-nuxt-cache"],
-        "Varnish": ["varnish"],
-        "Fastly": ["fastly"],
-        "Netlify": ["netlify"],
+        "LiteSpeed": ["litespeed"],
+        "Microsoft IIS": ["microsoft-iis"],
+        "Caddy": ["caddy"],
+        "Tomcat": ["tomcat"],
         "OpenResty": ["openresty"],
-        "Phusion Passenger": ["phusion_passenger"],
         "Envoy": ["envoy"],
-    },
-    "body": {
-        # CMS
-        "WordPress": ["wordpress", "wp-content", "wp-includes", "wp-json"],
-        "Drupal": ["drupal", "sites/all", "Drupal.settings"],
-        "Joomla": ["joomla", "Joomla!"],
-        "Ghost": ["ghost-org", "ghost.io"],
-        "Strapi": ["strapi"],
-        "Magento": ["magento", "Mage.Cookies"],
-        "Shopify": ["shopify", "shopify-checkout"],
         
-        # Frameworks & Libraries
-        "React": ["react", "_reactroot", "react-dom"],
-        "Vue.js": ["vue", "__vue__", "vue.js"],
-        "Angular": ["ng-app", "angular", "_ngcontent", "_nghost"],
-        "Svelte": ["svelte-"],
-        "Alpine.js": ["x-data=", "alpine.js"],
-        "Bootstrap": ["bootstrap.css", "bootstrap.min.css", "bootstrap.js"],
-        "Tailwind CSS": ["tailwind", "tw-"],
-        "jQuery": ["jquery", "jquery.min.js"],
-        "D3.js": ["d3.js", "d3.min.js"],
-        "Three.js": ["three.js", "three.min.js"],
-        
-        # Analytics & Tracking
-        "Google Analytics": ["googletagmanager", "google-analytics.com", "UA-"],
-        "Facebook Pixel": ["facebook.net/en_US/fbevents.js", "fbq("],
-        "Hotjar": ["hotjar-"],
-        "HubSpot": ["hubspot"],
-        "Mixpanel": ["mixpanel"],
+        # CDNs & Cache
+        "Cloudflare": ["cloudflare", "cf-ray", "cf-cache-status"],
+        "Akamai": ["akamai", "x-akamai-transformed"],
+        "Fastly": ["fastly"],
+        "Amazon CloudFront": ["cloudfront", "x-amz-cf-id"],
+        "Netlify": ["netlify"],
+        "Vercel": ["x-vercel-id", "x-vercel-cache"],
+        "Varnish": ["varnish", "x-varnish"],
+        "Fastly": ["fastly"],
         
         # Misc
-        "Google Fonts": ["fonts.googleapis.com"],
-        "Font Awesome": ["font-awesome", "fontawesome"],
-        "Recaptcha": ["google.com/recaptcha"],
-        "Cloudflare": ["/cdn-cgi/"],
+        "Next.js": ["x-nextjs-cache", "x-powered-by: next.js"],
+        "Nuxt.js": ["x-nuxt-cache"],
+        "Drupal": ["X-Drupal-Cache", "X-Generator: Drupal"],
+    },
+    "body": {
+        # Frontend / UI Frameworks
+        "HTML5": ["<!DOCTYPE html>", "<header>", "<footer>", "<article>"],
+        "CSS3": ["@media", "flexbox", "grid-template"],
+        "Bootstrap": ["bootstrap.css", "bootstrap.min.css", "bootstrap.js", "btn-primary", "col-md-"],
+        "Tailwind CSS": ["tailwind", "tw-", "bg-", "text-", "sm:", "md:", "lg:"],
+        "Bulma": ["bulma.css", "is-primary", "is-fluid"],
+        "Foundation": ["foundation.css", "foundation.js"],
+        "Materialize": ["materialize.css", "materialize.js"],
+        "React": ["react", "_reactroot", "react-dom", "__REACT_DEVTOOLS_GLOBAL_HOOK__"],
+        "Angular": ["ng-app", "angular", "_ngcontent", "_nghost", "ng-controller"],
+        "Vue.js": ["vue", "__vue__", "vue.js", "v-bind", "v-if"],
+        "Svelte": ["svelte-", "svelte.js"],
+        "Gatsby": ["gatsby-", "GatsbyImage"],
+        "jQuery": ["jquery", "jquery.min.js", "jQuery.fn"],
+        "Alpine.js": ["x-data=", "alpine.js", "x-init"],
+        "Ember.js": ["Ember.VERSION", "ember-application"],
+        "Backbone.js": ["Backbone.VERSION"],
+        
+        # JS Libraries
+        "Lodash": ["lodash", "_.VERSION"],
+        "Moment.js": ["moment.js", "moment()."],
+        "Axios": ["axios.min.js", "axios.js"],
+        "Chart.js": ["chart.js", "new Chart("],
+        "D3.js": ["d3.js", "d3.min.js"],
+        "Three.js": ["three.js", "three.min.js", "THREE.Scene"],
+        "GSAP": ["gsap.js", "TweenMax", "TimelineMax"],
+        "RequireJS": ["require.js", "data-main="],
+        "Webpack": ["webpack", "__webpack_require__"],
+        "Babel": ["babel-polyfill"],
+        "Vite": ["/ @vite/client"],
+        
+        # CMS
+        "WordPress": ["wordpress", "wp-content", "wp-includes", "wp-json", "wp-embed"],
+        "Joomla": ["joomla", "Joomla!", "option=com_"],
+        "Drupal": ["drupal", "sites/all", "Drupal.settings"],
+        "Ghost": ["ghost-org", "ghost.io", "ghost-head"],
+        "TYPO3": ["typo3"],
+        "Magento": ["magento", "Mage.Cookies"],
+        "PrestaShop": ["prestashop"],
+        "OpenCart": ["opencart"],
+        "Shopify": ["shopify", "shopify-checkout", "/cdn.shopify.com/"],
+        "BigCommerce": ["bigcommerce"],
+        "WooCommerce": ["woocommerce", "wc-ajax"],
+        
+        # Databases (Indirect)
+        "MySQL": ["mysql error", "sql error", "mysql_fetch_array"],
+        "PostgreSQL": ["postgresql error", "pg_query"],
+        "MongoDB": ["mongodb://", "mongo-db"],
+        "Redis": ["redis-", "x-redis"],
+        
+        # Analytics & Tracking
+        "Google Analytics": ["googletagmanager", "google-analytics.com", "UA-", "G-"],
+        "Google Tag Manager": ["gtm.js", "googletagmanager.com/gtm.js"],
+        "Hotjar": ["hotjar-", "_hjSettings"],
+        "Mixpanel": ["mixpanel.init"],
+        "Segment": ["analytics.js", "segment.io"],
+        "Matomo": ["matomo.js", "piwik.js"],
+        "Facebook Pixel": ["facebook.net/en_US/fbevents.js", "fbq("],
+        "Adobe Analytics": ["s_code.js", "s_account"],
+        "HubSpot": ["hubspot", "hbspt.forms"],
+        
+        # Security / Auth
+        "reCAPTCHA": ["google.com/recaptcha", "g-recaptcha"],
+        "hCaptcha": ["hcaptcha.com/1/api.js"],
+        "Auth0": ["auth0.min.js", "auth0-js"],
+        "Okta": ["okta-sign-in", "okta-auth-js"],
+        "Firebase": ["firebase.js", "firebase-app"],
+        
+        # Payments
+        "Stripe": ["js.stripe.com", "stripe-button"],
+        "PayPal": ["paypalobjects.com/api/checkout.js", "paypal-button"],
+        "Razorpay": ["checkout.razorpay.com"],
+        
+        # Misc Enterprise
+        "Salesforce": ["salesforce.com", "force.com"],
+        "SAP": ["sap-ui-core.js"],
+        "ServiceNow": ["servicenow.com"],
+        "Jira": ["atlassian-jira"],
+        "Zendesk": ["zendesk.com", "zdassets.com"],
     }
 }
 
@@ -93,6 +162,8 @@ WAF_SIGNATURES = [
     ("f5bigip", "cookie:bigipserver", "F5 BIG-IP"),
     ("fortinet", "server:fortiweb", "FortiWeb"),
     ("radware", "server:radware", "Radware"),
+    ("aws_waf", "server:aws_waf", "AWS WAF"),
+    ("azure_waf", "server:azure_waf", "Azure WAF"),
 ]
 
 
@@ -174,101 +245,65 @@ def _detect_waf(headers: Dict[str, str], cookies: str) -> Optional[str]:
     return None
 
 
-async def _parse_response(
+def get_cert_from_response(response: aiohttp.ClientResponse) -> str:
+    """Extract SSL Common Name from an active aiohttp response."""
+    try:
+        if response.connection and response.connection.transport:
+            ssl_obj = response.connection.transport.get_extra_info('ssl_object')
+            if ssl_obj:
+                cert_bin = ssl_obj.getpeercert(binary_form=True)
+                return parse_certificate(cert_bin)
+    except Exception:
+        pass
+    return ""
+
+
+async def unified_probe(
     session: aiohttp.ClientSession,
-    url: str,
-    port: int,
-    protocol: str,
     ip: str,
-    common_name: str,
-    make_request_by_ip: bool,
+    port: int,
     config
 ) -> Optional[Dict[str, Any]]:
     """
-    Parse HTTP response and extract metadata.
-    
-    Returns structured data including title, headers, tech stack, etc.
+    Unified probe that gathers all data (SSL, HTTP, Favicon, WAF, Tech) 
+    in a single efficient flow.
     """
+    ssl_ports = {443, 8443, 4443, 9443}
+    protocol = "https://" if port in ssl_ports else "http://"
+    
+    url = f"{protocol}{ip}:{port}"
     try:
-        async with session.get(
-            url,
-            allow_redirects=True,
-            timeout=aiohttp.ClientTimeout(total=config.timeout),
-            ssl=False
-        ) as res:
-            response = await res.text(encoding="utf-8", errors="replace")
-            content_type = res.headers.get("Content-Type", "")
+        async with session.get(url, timeout=config.timeout, allow_redirects=True, ssl=False) as resp:
+            status_code = resp.status
+            response_headers = dict(resp.headers)
+            cookies = response_headers.get("Set-Cookie", "")
             
-            # Extract headers and status
-            status_code = res.status
-            response_headers = {
-                k: v.encode("utf-8", "surrogatepass").decode("utf-8")
-                for k, v in res.headers.items()
-            }
+            # 1. Extract SSL CN from the same connection
+            common_name = get_cert_from_response(resp)
             
-            # Get redirect info
-            redirected_domain = str(res.url) if res.history else ""
-            cookies = res.headers.get("Set-Cookie", "")
+            # 2. Get Response Body
+            body = await resp.text(errors='ignore')
             
-            # Parse content based on type
-            title = ""
-            first_300_words = ""
-            
-            if "html" in content_type.lower():
-                soup = BeautifulSoup(response, "html.parser", parse_only=_HTML_STRAINER)
-                
-                if soup.title and soup.title.string:
-                    title = soup.title.string.strip()
-                
-                if soup.body:
-                    body_text = soup.body.get_text(separator=" ", strip=True)
-                    words = body_text.split()
-                    first_300_words = " ".join(words[:300])
-                elif not soup.title:
-                    # Fallback for dynamic content
-                    words = response.split()
-                    first_300_words = " ".join(words[:300])
-                    
-            elif "xml" in content_type.lower():
-                try:
-                    root = ET.fromstring(response)
-                    words = []
-                    for elem in root.iter():
-                        if elem.text:
-                            words.extend(elem.text.split())
-                            if len(words) >= 300:
-                                break
-                    first_300_words = " ".join(words[:300])
-                except ET.ParseError:
-                    pass
-                    
-            elif "json" in content_type.lower():
-                first_300_words = response[:1000]
-                
-            elif "plain" in content_type.lower():
-                words = response.split()
-                first_300_words = " ".join(words[:300])
-            
-            # Detect technologies and WAF
-            technologies = _detect_technologies(response_headers, response)
+            # 3. Detect Tech & WAF
+            techs = _detect_technologies(response_headers, body)
             waf = _detect_waf(response_headers, cookies)
             
-            # Get favicon hash (non-blocking)
-            fav_hash = await get_favicon_hash(
-                session, 
-                f"{protocol}{ip if make_request_by_ip else common_name}:{port}",
-                config.timeout
-            )
+            # 4. Get Favicon (Try to reuse session/connection)
+            fav_hash = await get_favicon_hash(session, f"{protocol}{ip}:{port}", config.timeout)
             
-            # Get JARM hash (only for HTTPS/443)
+            # 5. JARM (Separate Probe sadly, but only if HTTPS)
             jarm_hash = None
-            if str(port) == "443" or protocol == "https://":
-                jarm_hash = await asyncio.to_thread(get_jarm_hash, ip, int(port))
+            if protocol == "https://":
+                jarm_hash = await asyncio.to_thread(get_jarm_hash, ip, port)
+
+            # Summarize result
+            first_300_words = " ".join(body.split()[:300])
             
-            return {
-                "title": title.encode("utf-8", "surrogatepass").decode("utf-8"),
-                "request": f"{protocol}{ip if make_request_by_ip else common_name}:{port}",
-                "redirected_url": redirected_domain,
+            # Format according to existing schema
+            result = {
+                "title": _extract_title(body),
+                "request": url,
+                "redirected_url": str(resp.url) if str(resp.url) != url else None,
                 "ip": ip,
                 "port": str(port),
                 "domain": common_name,
@@ -276,128 +311,83 @@ async def _parse_response(
                 "response_headers": response_headers,
                 "favicon_hash": fav_hash,
                 "jarm_hash": jarm_hash,
-                "technologies": list(technologies),
+                "technologies": list(techs),
                 "waf": waf,
                 "status_code": status_code
             }
             
-    except ET.ParseError as e:
-        log_to_server(f"XML Parse Error for {url}: {e}")
-    except (asyncio.TimeoutError, aiohttp.ClientError):
-        pass  # Connection/Timeout errors are expected
-    except Exception as e:
-        # Ignore gaierror specifically if it leaks through
-        if "gaierror" not in str(e).lower():
-            log_to_server(f"HTTP Error for {url}: {e}")
-    
+            return {f'{protocol.replace("://", "")}_responseForIP': result}
+
+    except Exception:
+        # If HTTPS failed, maybe it was HTTP on 443 (rare but happens)
+        # Or if HTTP failed, maybe it was HTTPS on a non-standard port.
+        pass
     return None
 
 
-async def make_get_request(
-    session: aiohttp.ClientSession,
-    protocol: str,
-    ip: str,
-    common_name: str,
-    config,
-    make_request_by_ip: bool = True
-) -> Optional[Any]:
+def _extract_title(html: str) -> str:
     """
-    Make HTTP/HTTPS GET request and parse response.
+    Extract page title from HTML with multiple fallback methods.
     
-    Args:
-        session: aiohttp session
-        protocol: "http://" or "https://"
-        ip: Target IP address
-        common_name: Domain from SSL cert
-        config: ScannerConfig object
-        make_request_by_ip: Whether to request by IP or domain
-        
-    Returns:
-        Parsed response data or None
+    Tries in order:
+    1. <title> tag
+    2. og:title meta tag  
+    3. <h1> tag
+    4. First significant text
     """
-    if make_request_by_ip:
-        if protocol == "http://":
-            results = []
-            for port in config.ports:
-                url = f"{protocol}{ip}:{port}"
-                result = await _parse_response(
-                    session, url, port, protocol, ip, 
-                    common_name, make_request_by_ip, config
-                )
-                if result:
-                    results.append(result)
-            return results if results else None
-        else:
-            url = f"{protocol}{ip}:{config.ssl_port}"
-            return await _parse_response(
-                session, url, config.ssl_port, protocol, ip,
-                common_name, make_request_by_ip, config
-            )
-    else:
-        port = 80 if protocol == "http://" else config.ssl_port
-        url = f"{protocol}{common_name}:{port}"
-        return await _parse_response(
-            session, url, port, protocol, ip,
-            common_name, make_request_by_ip, config
-        )
+    if not html:
+        return "No Title"
+        
+    try:
+        # Method 1: Try standard title tag with BeautifulSoup
+        soup = BeautifulSoup(html, 'lxml', parse_only=_HTML_STRAINER)
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+            if title:
+                return title[:200]  # Limit title length
+        
+        # Method 2: Try regex for title (faster for malformed HTML)
+        import re
+        title_match = re.search(r'<title[^>]*>([^<]+)</title>', html, re.IGNORECASE | re.DOTALL)
+        if title_match:
+            title = title_match.group(1).strip()
+            if title:
+                return title[:200]
+        
+        # Method 3: Try og:title meta tag
+        og_match = re.search(r'<meta[^>]*property=["\']og:title["\'][^>]*content=["\']([^"\']+)["\']', html, re.IGNORECASE)
+        if not og_match:
+            og_match = re.search(r'<meta[^>]*content=["\']([^"\']+)["\'][^>]*property=["\']og:title["\']', html, re.IGNORECASE)
+        if og_match:
+            title = og_match.group(1).strip()
+            if title:
+                return title[:200]
+        
+        # Method 4: Try h1 tag
+        h1_match = re.search(r'<h1[^>]*>([^<]+)</h1>', html, re.IGNORECASE | re.DOTALL)
+        if h1_match:
+            title = h1_match.group(1).strip()
+            if title:
+                return title[:200]
+        
+        return "No Title"
+    except Exception:
+        return "No Title"
+
 
 
 async def check_site(
     session: aiohttp.ClientSession,
     ip: str,
-    common_name: str,
+    port: int,
     config
 ) -> Optional[Dict[str, Any]]:
     """
-    Check a site by IP with optional domain probing.
-    
-    Makes requests via IP and domain name to gather complete data.
-    
-    Args:
-        session: aiohttp session
-        ip: Target IP address
-        common_name: Domain from SSL certificate
-        config: ScannerConfig object
-        
-    Returns:
-        Dictionary with all response data or None
+    Optimized entry point for a single IP+Port target.
     """
     try:
-        temp_dict = {}
-        
-        # Normalize common_name - handle None and empty strings
-        common_name = (common_name or "").strip()
-        
-        # If wildcard, empty, or invalid domain, only probe by IP
-        if not common_name or "*" in common_name or not is_valid_domain(common_name):
-            for protocol in config.protocols:
-                result = await make_get_request(
-                    session, protocol, ip, common_name, config, True
-                )
-                key = f'{protocol.replace("://", "")}_responseForIP'
-                temp_dict[key] = result
-        else:
-            # Probe by domain name
-            for protocol in config.protocols:
-                result = await make_get_request(
-                    session, protocol, ip, common_name, config, False
-                )
-                key = f'{protocol.replace("://", "")}_responseForDomainName'
-                temp_dict[key] = result
-            
-            # Also probe by IP
-            for protocol in config.protocols:
-                result = await make_get_request(
-                    session, protocol, ip, common_name, config, True
-                )
-                key = f'{protocol.replace("://", "")}_responseForIP'
-                temp_dict[key] = result
-        
-        # Filter None values
-        temp_dict = {k: v for k, v in temp_dict.items() if v is not None}
-        return temp_dict if temp_dict else None
-        
+        # We start with a unified probe on the specific port found
+        return await unified_probe(session, ip, port, config)
     except Exception as e:
-        log_to_server(f"Critical Error for {ip}: {e}")
-    
+        log_to_server(f"Critical Error for {ip}:{port}: {e}")
     return None

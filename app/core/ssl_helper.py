@@ -27,6 +27,16 @@ def get_ssl_context() -> ssl.SSLContext:
     return _SHARED_SSL_CONTEXT
 
 
+def parse_certificate(cert_bin: bytes) -> str:
+    """Parse binary certificate and return Common Name."""
+    try:
+        x509 = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_bin)
+        subject = x509.get_subject()
+        return subject.CN or ""
+    except Exception:
+        return ""
+
+
 async def fetch_certificate(
     ip: str, 
     config, 
@@ -34,23 +44,12 @@ async def fetch_certificate(
 ) -> Tuple[str, str]:
     """
     Fetch SSL certificate from an IP address and extract the Common Name.
-    
-    Args:
-        ip: Target IP address to connect to
-        config: ScannerConfig with port and timeout settings
-        ssl_context: Optional pre-created SSL context for reuse
-        
-    Returns:
-        Tuple of (ip, common_name). Common name is empty string on failure.
     """
     try:
         ctx = ssl_context if ssl_context else get_ssl_context()
-        
-        # Open connection asynchronously (Much faster than to_thread)
         conn = asyncio.open_connection(ip, config.ssl_port, ssl=ctx)
         reader, writer = await asyncio.wait_for(conn, timeout=config.timeout)
 
-        # Get the certificate in binary form
         ssl_obj = writer.get_extra_info('ssl_object')
         if ssl_obj is None:
             writer.close()
@@ -58,17 +57,10 @@ async def fetch_certificate(
             return ip, ""
             
         cert_bin = ssl_obj.getpeercert(binary_form=True)
-        
-        # Close connection immediately - don't wait for graceful close
         writer.close()
-        # Use create_task to not block on close
         asyncio.create_task(_safe_close(writer))
 
-        # Parse with OpenSSL
-        x509 = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_bin)
-        subject = x509.get_subject()
-        common_name = subject.CN or ""
-        
+        common_name = parse_certificate(cert_bin)
         return ip, common_name
 
     except asyncio.TimeoutError:

@@ -7,7 +7,12 @@
     <div class="flex-between mb-lg">
         <h2 style="margin: 0;">Search Results</h2>
         <div class="flex gap-sm">
-            <span style="color: var(--text-muted); font-size: 0.9rem;">Total: <strong id="total-count">0</strong></span>
+            <span style="color: var(--text-muted); font-size: 0.9rem; margin-right: 1rem;">Total: <strong
+                    id="total-count">0</strong></span>
+            <label class="flex gap-xs"
+                style="color: var(--text-muted); font-size: 0.9rem; cursor: pointer; user-select: none;">
+                <input type="checkbox" id="select-all-checkbox" onclick="toggleSelectAll(this)"> Select All
+            </label>
         </div>
     </div>
 
@@ -16,8 +21,11 @@
         <input type="text" id="search-input" class="form-input" style="margin-bottom: 0; flex: 1;"
             placeholder="Search by title, IP, or domain...">
         <button class="btn btn-primary" onclick="performSearch(1)">Search</button>
-        <button class="btn btn-outline" onclick="toggleFilters()">Filters</button>
-        <button class="btn btn-success" onclick="exportResults()">Export</button>
+        <button class="btn btn-outline" onclick="clearFilters()">Clear Filters</button>
+        <button class="btn btn-outline" onclick="toggleFilters()">Advanced UI</button>
+        <button id="fuzz-selected-btn" class="btn btn-success hidden" onclick="fuzzSelected()">Fuzz Selected
+            (0)</button>
+        <button class="btn btn-outline" onclick="exportResults()">Export</button>
     </div>
 
     <!-- Per Page Selector -->
@@ -41,9 +49,18 @@
         </div>
         <div id="filters-container"></div>
         <div class="flex gap-sm mt-md">
-            <button class="btn btn-primary" onclick="applyFilters(1)">Apply Filters</button>
-            <button class="btn btn-outline" onclick="clearFilters()">Clear All</button>
+            <button class="btn btn-primary" onclick="performSearch(1)">Update Results</button>
         </div>
+    </div>
+
+    <!-- Fuzzing Progress Panel -->
+    <div id="fuzz-status-container" class="glass-solid mb-md hidden"
+        style="padding: 1rem; border-left: 4px solid var(--success);">
+        <div class="flex-between mb-sm">
+            <h4 style="margin: 0; color: var(--success);">📡 Live Discovery</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">New paths found in real-time</span>
+        </div>
+        <div id="fuzz-hits-list" style="max-height: 200px; overflow-y: auto;"></div>
     </div>
 
     <!-- Results Container -->
@@ -59,6 +76,11 @@
     <div class="flex-between mb-md">
         <h3 class="modal-title" style="margin: 0;">Result Details</h3>
         <button onclick="closeModal()" class="btn btn-outline" style="padding: 0.25rem 0.5rem;">✕</button>
+    </div>
+    <div id="detail-actions" class="flex gap-sm mb-md"
+        style="display: none; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: var(--radius-sm);">
+        <button class="btn btn-primary btn-sm" onclick="startFuzz()"
+            style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">🔍 Directory Fuzz</button>
     </div>
     <div id="detail-content">Loading...</div>
 </div>
@@ -157,36 +179,168 @@
     let totalPages = 1;
     let filtersVisible = false;
     let filterCount = 0;
-    let useAdvancedFilters = false;
+    let selectedTargets = new Set();
+
+    // HTML escape function to prevent XSS
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+
+    function updateFuzzButton() {
+        const btn = document.getElementById('fuzz-selected-btn');
+        if (selectedTargets.size > 0) {
+            btn.classList.remove('hidden');
+            btn.innerText = `Fuzz Selected (${selectedTargets.size})`;
+        } else {
+            btn.classList.add('hidden');
+        }
+    }
+
+    function toggleSelect(idx, checkbox) {
+        const cards = document.querySelectorAll('.result-card');
+        const data = JSON.parse(cards[idx].dataset.result);
+
+        // Schema-Agnostic detail extraction
+        let resp = data.http_responseForIP || data.https_responseForIP ||
+            data.http_responseForDomainName || data.https_responseForDomainName;
+        if (!resp) resp = data;
+        const main = Array.isArray(resp) ? resp[0] || {} : resp;
+
+        const target = Array.isArray(resp) ? (resp[0]?.request || resp[0]?.ip) : (resp.request || resp.ip);
+
+        if (checkbox.checked) {
+            selectedTargets.add(target);
+        } else {
+            selectedTargets.delete(target);
+        }
+        updateFuzzButton();
+    }
+
+    async function fuzzSelected() {
+        const targets = Array.from(selectedTargets);
+        if (targets.length === 0) return;
+
+        try {
+            const res = await fetch('/fuzz/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targets })
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            alert(`Fuzzing job started! (ID: ${data.job_id})\nMonitoring discovery in real-time...`);
+            startFuzzMonitor();
+        } catch (e) {
+            alert('Fuzzing failed to start: ' + e.message);
+        }
+    }
+
+    function startFuzzMonitor() {
+        // Poll every 2 seconds for new hits
+        setInterval(async () => {
+            try {
+                const res = await fetch('/fuzz/status');
+                const data = await res.json();
+                renderFuzzProgress(data);
+            } catch (e) { }
+        }, 2000);
+    }
+
+    function renderFuzzProgress(data) {
+        const container = document.getElementById('fuzz-status-container');
+        if (!container) return;
+
+        const hasActive = Object.values(data.jobs).some(j => j.status === 'running');
+        container.classList.toggle('hidden', !hasActive && data.recent_hits.length === 0);
+
+        if (data.recent_hits.length > 0) {
+            const hitsHtml = data.recent_hits.map(hit => `
+                <div class="log-entry" style="font-size: 0.8rem; border-left: 2px solid var(--success); padding-left: 0.5rem; margin-bottom: 0.25rem;">
+                    <span style="color: var(--success); font-weight: bold;">[DISCOVERED]</span> 
+                    <span style="color: var(--text-primary);">${hit.status}</span> 
+                    <a href="${hit.url}" target="_blank" style="color: var(--primary);">${hit.url}</a>
+                </div>
+            `).join('');
+            document.getElementById('fuzz-hits-list').innerHTML = hitsHtml;
+        }
+    }
 
     // Perform search with pagination
+    // Unified search function for both quick search and advanced filters
     async function performSearch(page = 1) {
         currentPage = page;
         const q = document.getElementById('search-input').value || '';
         const perPage = document.getElementById('per-page-select').value;
+        const filtersPanel = document.getElementById('filters-panel');
+
+        // Collect advanced filters if panel is visible
+        let filters = [];
+        if (!filtersPanel.classList.contains('hidden')) {
+            const rows = document.querySelectorAll('.filter-row');
+            rows.forEach(row => {
+                const field = row.querySelector('.filter-field').value;
+                const operator = row.querySelector('.filter-operator').value;
+                const value = row.querySelector('.filter-value').value;
+                if (value.trim()) {
+                    filters.push({ field, operator, value });
+                }
+            });
+        }
 
         try {
-            const res = await fetch(`/search/title?q=${encodeURIComponent(q)}&page=${page}&per_page=${perPage}`);
-            const data = await res.json();
-
-            if (data.error) {
-                console.error(data.error);
-                return;
+            let res;
+            if (filters.length > 0) {
+                // Use advanced search endpoint
+                res = await fetch(`/search/advanced?page=${page}&per_page=${perPage}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filters })
+                });
+            } else {
+                // Use basic search endpoint
+                res = await fetch(`/search/title?q=${encodeURIComponent(q)}&page=${page}&per_page=${perPage}`);
             }
 
-            totalPages = data.total_pages;
-            document.getElementById('total-count').innerText = data.total;
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
 
-            renderResults(data.results);
+            if (Array.isArray(data)) {
+                totalPages = 1;
+                document.getElementById('total-count').innerText = data.length;
+                renderResults(data);
+            } else {
+                totalPages = data.total_pages || 1;
+                document.getElementById('total-count').innerText = data.total || 0;
+                renderResults(data.results || []);
+            }
             renderPagination();
         } catch (e) {
             console.error('Search error:', e);
         }
     }
 
+    function toggleSelectAll(checkbox) {
+        const isChecked = checkbox.checked;
+        const resultCheckboxes = document.querySelectorAll('.result-select');
+        const cards = document.querySelectorAll('.result-card');
+
+        cards.forEach((card, idx) => {
+            const resultCheckbox = resultCheckboxes[idx];
+            if (resultCheckbox.checked !== isChecked) {
+                resultCheckbox.checked = isChecked;
+                toggleSelect(idx, resultCheckbox);
+            }
+        });
+    }
+
     // Render results
     function renderResults(results) {
         const container = document.getElementById('results-container');
+        document.getElementById('select-all-checkbox').checked = false; // Reset on new render
 
         if (!results || !results.length) {
             container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 3rem;">No results found</div>';
@@ -194,31 +348,36 @@
         }
 
         container.innerHTML = results.map((r, idx) => {
-            const resp = r.http_responseForIP || r.https_responseForIP ||
-                r.http_responseForDomainName || r.https_responseForDomainName || {};
+            let resp = r.http_responseForIP || r.https_responseForIP ||
+                r.http_responseForDomainName || r.https_responseForDomainName;
+
+            // Schema-Agnostic: if not nested, take the object itself
+            if (!resp) resp = r;
             const data = Array.isArray(resp) ? resp[0] || {} : resp;
 
             const techTags = (data.technologies || [])
-                .map(t => `<span class="tag tag-tech">${t}</span>`).join('');
-            const wafTag = data.waf ? `<span class="tag tag-waf">WAF: ${data.waf}</span>` : '';
-            const domainBadge = data.domain ? `<span class="domain-badge">${data.domain}</span>` : '';
+                .map(t => `<span class="tag tag-tech">${escapeHtml(t)}</span>`).join('');
+            const wafTag = data.waf ? `<span class="tag tag-waf">WAF: ${escapeHtml(data.waf)}</span>` : '';
+            const domainBadge = data.domain ? `<span class="domain-badge">${escapeHtml(data.domain)}</span>` : '';
+            const safeTitle = escapeHtml(data.title || 'No Title');
 
             return `
-            <div class="result-card" onclick="showDetail(${idx})" style="cursor: pointer;" data-result='${JSON.stringify(r).replace(/'/g, "&#39;")}'>
+            <div class="result-card" onclick="showDetail(${idx})" style="cursor: pointer; position: relative;" data-result='${JSON.stringify(r).replace(/'/g, "&#39;")}'>
+                <input type="checkbox" class="result-select" onclick="event.stopPropagation(); toggleSelect(${idx}, this)" style="position: absolute; right: 1rem; top: 1rem; cursor: pointer;">
                 <div class="result-title">
                     <span class="tag ${data.status_code >= 200 && data.status_code < 300 ? 'tag-tech' : (data.status_code >= 300 && data.status_code < 400 ? 'tag-waf' : 'tag-danger')}" style="margin-right: 0.5rem; border: 1px solid rgba(255,255,255,0.1)">
                         ${data.status_code || '???'}
                     </span>
-                    ${data.title || 'No Title'}
+                    ${safeTitle}
                     ${domainBadge}
                     ${wafTag}
                 </div>
                 <div style="margin-top: 0.25rem;">${techTags}</div>
-                <div class="result-url">${data.request || 'N/A'}</div>
+                <div class="result-url"><a href="${escapeHtml(data.request)}" target="_blank" onclick="event.stopPropagation()" style="color: var(--primary); text-decoration: underline;">${escapeHtml(data.request || 'N/A')}</a></div>
                 <div class="result-meta">
-                    <div><strong>IP:</strong> ${data.ip || 'N/A'}</div>
+                    <div><strong>IP:</strong> <a href="http://${escapeHtml(data.ip)}" target="_blank" onclick="event.stopPropagation()" style="color: var(--primary); text-decoration: underline;">${escapeHtml(data.ip || 'N/A')}</a></div>
                     <div><strong>Port:</strong> ${data.port || 'N/A'}</div>
-                    <div><strong>Domain:</strong> ${data.domain || 'N/A'}</div>
+                    <div><strong>Domain:</strong> <a href="https://${escapeHtml(data.domain)}" target="_blank" onclick="event.stopPropagation()" style="color: var(--primary); text-decoration: underline;">${escapeHtml(data.domain || 'N/A')}</a></div>
                     <div><strong>Favicon:</strong> <span class="font-mono">${data.favicon_hash || 'N/A'}</span></div>
                 </div>
             </div>
@@ -312,46 +471,12 @@
     }
 
     function clearFilters() {
+        document.getElementById('search-input').value = '';
         document.getElementById('filters-container').innerHTML = '';
         filterCount = 0;
-        addFilter();
-    }
-
-    async function applyFilters(page = 1) {
-        currentPage = page;
-        const rows = document.querySelectorAll('.filter-row');
-        const filters = [];
-        const perPage = document.getElementById('per-page-select').value;
-
-        rows.forEach(row => {
-            const field = row.querySelector('.filter-field').value;
-            const operator = row.querySelector('.filter-operator').value;
-            const value = row.querySelector('.filter-value').value.trim();
-            if (value) filters.push({ field, operator, value });
-        });
-
-        try {
-            const res = await fetch('/search/advanced', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filters, page, per_page: parseInt(perPage) })
-            });
-            const data = await res.json();
-
-            if (Array.isArray(data)) {
-                // Old response format without pagination
-                document.getElementById('total-count').innerText = data.length;
-                renderResults(data);
-                totalPages = 1;
-            } else {
-                totalPages = data.total_pages || 1;
-                document.getElementById('total-count').innerText = data.total || data.results?.length || 0;
-                renderResults(data.results || data);
-            }
-            renderPagination();
-        } catch (e) {
-            console.error('Filter error:', e);
-        }
+        document.getElementById('filters-panel').classList.add('hidden');
+        filtersVisible = false;
+        performSearch(1);
     }
 
     // Detail Modal
@@ -367,21 +492,23 @@
             ['http_responseForDomainName', 'HTTP Response (Domain)']
         ];
 
+        let hasFoundResult = false;
         responseTypes.forEach(([key, label]) => {
             if (resultData[key]) {
+                hasFoundResult = true;
                 const data = Array.isArray(resultData[key]) ? resultData[key][0] : resultData[key];
                 if (data) {
                     content += `
                     <div class="detail-section">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--text-accent);">${label}</h4>
                         <div class="detail-label">URL</div>
-                        <div class="detail-value">${data.request || 'N/A'}</div>
+                        <div class="detail-value"><a href="${data.request}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.request || 'N/A'}</a></div>
                         <div class="detail-label mt-sm">Title</div>
                         <div class="detail-value">${data.title || 'N/A'}</div>
                         <div class="detail-label mt-sm">IP / Port</div>
-                        <div class="detail-value">${data.ip || 'N/A'}:${data.port || 'N/A'}</div>
+                        <div class="detail-value"><a href="http://${data.ip}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.ip || 'N/A'}</a>:${data.port || 'N/A'}</div>
                         <div class="detail-label mt-sm">Domain</div>
-                        <div class="detail-value">${data.domain || 'N/A'}</div>
+                        <div class="detail-value"><a href="https://${data.domain}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.domain || 'N/A'}</a></div>
                         ${data.redirected_url ? `<div class="detail-label mt-sm">Redirected To</div><div class="detail-value">${data.redirected_url}</div>` : ''}
                         <div class="detail-label mt-sm">Technologies</div>
                         <div>${(data.technologies || []).map(t => `<span class="tag tag-tech">${t}</span>`).join(' ') || 'None'}</div>
@@ -404,11 +531,67 @@
             }
         });
 
+        // Fallback for flat schema (e.g. results inserted during the optimized engine bug)
+        if (!hasFoundResult) {
+            const data = resultData;
+            content += `
+                <div class="detail-section">
+                    <h4 style="margin: 0 0 0.5rem 0; color: var(--text-accent);">Service Data</h4>
+                    <div class="detail-label">URL</div>
+                    <div class="detail-value"><a href="${data.request}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.request || 'N/A'}</a></div>
+                    <div class="detail-label mt-sm">Title</div>
+                    <div class="detail-value">${data.title || 'N/A'}</div>
+                    <div class="detail-label mt-sm">IP / Port</div>
+                    <div class="detail-value"><a href="http://${data.ip}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.ip || 'N/A'}</a>:${data.port || 'N/A'}</div>
+                    <div class="detail-label mt-sm">Domain</div>
+                    <div class="detail-value"><a href="https://${data.domain}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.domain || 'N/A'}</a></div>
+                    <div class="detail-label mt-sm">Technologies</div>
+                    <div>${(data.technologies || []).map(t => `<span class="tag tag-tech">${t}</span>`).join(' ') || 'None'}</div>
+                    ${data.waf ? `<div class="detail-label mt-sm">WAF</div><div><span class="tag tag-waf">${data.waf}</span></div>` : ''}
+                    <div class="detail-label mt-sm">Favicon Hash</div>
+                    <div class="detail-value">${data.favicon_hash || 'N/A'}</div>
+                    <div class="detail-label mt-sm">Status Code</div>
+                    <div class="detail-value"><span class="tag ${data.status_code >= 200 && data.status_code < 300 ? 'tag-tech' : 'tag-waf'}">${data.status_code || 'N/A'}</span></div>
+                </div>
+            `;
+        }
+
+        // Add Fuzzing Results section if data exists
+        if (resultData.fuzz_results && resultData.fuzz_results.length > 0) {
+            content += `
+                <div class="detail-section">
+                    <h4 style="margin: 0 0 0.5rem 0; color: var(--success);">🎯 Fuzzing Discovery</h4>
+                    <div style="font-size: 0.85rem;">
+                        ${resultData.fuzz_results.map(f => `
+                            <div style="margin-bottom: 0.25rem;">
+                                <span class="tag tag-tech" style="padding: 1px 4px; font-size: 0.7rem;">${f.status}</span>
+                                <a href="${f.url}" target="_blank" style="color: var(--primary);">${f.url}</a>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
         if (!content) content = '<div style="text-align: center; color: var(--text-muted);">No response data</div>';
 
         document.getElementById('detail-content').innerHTML = content;
+        document.getElementById('detail-actions').style.display = 'flex';
         document.getElementById('detail-modal').classList.add('active');
         document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function startFuzz() {
+        const urlElement = document.querySelector('.detail-value a');
+        if (!urlElement) {
+            alert('Could not determine target URL.');
+            return;
+        }
+        const target = urlElement.href;
+        selectedTargets.add(target);
+        updateFuzzButton();
+        fuzzSelected();
+        closeModal();
     }
 
     function closeModal() {

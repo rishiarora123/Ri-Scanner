@@ -12,6 +12,13 @@ from bson.regex import Regex
 main_bp = Blueprint('main', __name__)
 
 import subprocess
+import time
+from .core.fuzzer_helper import AsyncFuzzer
+from .core.tools_checker import get_tools_checker
+
+# Global state for active scans and fuzzing
+ACTIVE_FUZZ_JOBS = {}
+FUZZ_RESULTS = [] # Snapshot of latest hits for dashboard
 
 # Global Context
 scan_status = {
@@ -52,6 +59,10 @@ def dashboard():
 def results_page():
     return render_template("results.html")
 
+@main_bp.route("/settings")
+def settings_page():
+    return render_template("settings.html")
+
 @main_bp.route("/start_scan", methods=["POST"])
 def start_scan():
     mode = request.form.get("mode")
@@ -65,6 +76,8 @@ def start_scan():
 
     if mode == "recon":
         target = request.form.get("domain")
+    elif mode == "asn_list":
+        target = request.form.get("asns")
     elif mode in ["masscan_file", "ip_file"]:
         if 'file' not in request.files:
             return "No file uploaded", 400
@@ -111,7 +124,7 @@ def stop_scan():
     # Force kill masscan immediately
     try:
         subprocess.run(["sudo", "killall", "masscan"], capture_output=True)
-    except: 
+    except Exception: 
         pass
         
     scan_status["phase"] = "Stopping..."
@@ -171,24 +184,46 @@ def get_logs():
 @main_bp.route("/export", methods=["POST"])
 def export_data():
     try:
+        # Check database availability
+        if current_app.db is None:
+            return jsonify({"error": "Database unavailable"}), 503
+            
         data = request.get_json()
         filename = data.get("filename")
         if not filename:
             return jsonify({"error": "Filename is required"}), 400
+        
+        # Sanitize filename to prevent path traversal
+        safe_filename = secure_filename(os.path.basename(filename))
+        if not safe_filename:
+            safe_filename = "export.json"
+        
+        # Ensure .json extension
+        if not safe_filename.endswith('.json'):
+            safe_filename += '.json'
+        
+        # Restrict exports to Tmp directory
+        if not os.path.exists("Tmp"):
+            os.makedirs("Tmp")
+        safe_path = os.path.join("Tmp", safe_filename)
             
         cursor = current_app.db["sslchecker"].find({}, {"_id": 0})
         results = list(cursor)
         
-        with open(filename, 'w') as f:
+        with open(safe_path, 'w') as f:
             json.dump(results, f, indent=4, default=json_util.default)
             
-        return jsonify({"status": "exported", "count": len(results), "path": filename})
+        return jsonify({"status": "exported", "count": len(results), "path": os.path.abspath(safe_path)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @main_bp.route("/insert", methods=["POST"])
 def insert():
     try:
+        # Check database availability
+        if current_app.db is None:
+            return jsonify({"error": "Database unavailable"}), 503
+            
         results_json = request.get_json()
         if results_json:
             current_app.db["sslchecker"].insert_many(results_json)
@@ -201,6 +236,10 @@ def insert():
 @main_bp.route("/search/title", methods=["GET"])
 def search_title():
     try:
+        # Check database availability
+        if current_app.db is None:
+            return jsonify({"error": "Database unavailable"}), 503
+            
         query = request.args.get("q", "").strip()
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 50))
@@ -249,7 +288,7 @@ def search_title():
 @main_bp.route("/search/advanced", methods=["POST"])
 def search_advanced():
     """
-    Advanced search with filters.
+    Advanced search with filters and pagination support.
     
     Request body:
     {
@@ -257,20 +296,43 @@ def search_advanced():
             {"field": "title", "operator": "contains", "value": "login"},
             {"field": "waf", "operator": "equals", "value": "Cloudflare"},
             {"field": "ip", "operator": "not_contains", "value": "192.168"}
-        ]
+        ],
+        "page": 1,
+        "per_page": 50
     }
     
     Operators: equals, not_equals, contains, not_contains
-    Fields: title, ip, domain, waf, technologies, port, jarm_hash, favicon_hash
+    Fields: title, ip, domain, waf, technologies, port, jarm_hash, favicon_hash, status_code
     """
     try:
+        # Check database availability
+        if current_app.db is None:
+            return jsonify({"error": "Database unavailable"}), 503
+            
         data = request.get_json() or {}
         filters = data.get("filters", [])
         
+        # Parse pagination from request body or query params
+        page = int(data.get("page", request.args.get("page", 1)))
+        per_page = int(data.get("per_page", request.args.get("per_page", 50)))
+        
+        # Clamp values
+        page = max(1, page)
+        per_page = min(max(10, per_page), 200)
+        skip = (page - 1) * per_page
+        
         if not filters:
             # Return recent results if no filters
-            results = list(current_app.db["sslchecker"].find({}, {"_id": 0}).sort("_id", -1).limit(50))
-            return jsonify(results)
+            total = current_app.db["sslchecker"].count_documents({})
+            results = list(current_app.db["sslchecker"].find({}, {"_id": 0}).sort("_id", -1).skip(skip).limit(per_page))
+            total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+            return jsonify({
+                "results": results,
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages
+            })
         
         # Build MongoDB query from filters
         query_conditions = []
@@ -286,17 +348,32 @@ def search_advanced():
             # Map field names to possible document paths
             field_paths = _get_field_paths(field)
             
+            # Handle numeric types for exact matches
+            processed_value = value
+            if field in ["status_code", "port"]:
+                try:
+                    processed_value = int(value)
+                except ValueError:
+                    pass
+            
             # Build condition based on operator
             if operator == "equals":
-                condition = {"$or": [{path: value} for path in field_paths]}
+                condition = {"$or": [{path: processed_value} for path in field_paths]}
             elif operator == "not_equals":
-                condition = {"$and": [{path: {"$ne": value}} for path in field_paths]}
+                condition = {"$and": [{path: {"$ne": processed_value}} for path in field_paths]}
             elif operator == "contains":
-                regex = Regex(rf".*{re.escape(value)}.*", "i")
-                condition = {"$or": [{path: regex} for path in field_paths]}
+                # For numeric fields, 'contains' acts like 'equals' if it's an integer
+                if isinstance(processed_value, int):
+                    condition = {"$or": [{path: processed_value} for path in field_paths]}
+                else:
+                    regex = Regex(rf".*{re.escape(value)}.*", "i")
+                    condition = {"$or": [{path: regex} for path in field_paths]}
             elif operator == "not_contains":
-                regex = Regex(rf".*{re.escape(value)}.*", "i")
-                condition = {"$and": [{path: {"$not": regex}} for path in field_paths]}
+                if isinstance(processed_value, int):
+                    condition = {"$and": [{path: {"$ne": processed_value}} for path in field_paths]}
+                else:
+                    regex = Regex(rf".*{re.escape(value)}.*", "i")
+                    condition = {"$and": [{path: {"$not": regex}} for path in field_paths]}
             else:
                 continue
             
@@ -308,12 +385,100 @@ def search_advanced():
         else:
             db_query = {}
         
-        results = list(current_app.db["sslchecker"].find(db_query, {"_id": 0}).limit(200))
-        return jsonify(results)
+        total = current_app.db["sslchecker"].count_documents(db_query)
+        results = list(current_app.db["sslchecker"].find(db_query, {"_id": 0}).skip(skip).limit(per_page))
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+        
+        return jsonify({
+            "results": results,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages
+        })
         
     except Exception as e:
         print(e)
         return jsonify({"error": str(e)}), 500
+
+
+@main_bp.route("/fuzz/start", methods=["POST"])
+def start_fuzz():
+    """
+    Starts an asynchronous fuzzing job for selected targets.
+    """
+    try:
+        data = request.get_json() or {}
+        targets = data.get("targets", [])
+        if not targets:
+            return jsonify({"error": "No targets selected"}), 400
+
+        job_id = str(int(time.time()))
+        ACTIVE_FUZZ_JOBS[job_id] = {
+            "status": "running",
+            "targets": targets,
+            "results_count": 0,
+            "start_time": time.time()
+        }
+
+        # Start background thread for asyncio fuzzer
+        def run_fuzzer_thread(app, targets_list, job_id_str):
+            with app.app_context():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                wordlist = os.path.join(app.root_path, "static", "wordlists", "common.txt")
+                fuzzer = AsyncFuzzer(targets_list, wordlist)
+                
+                async def progress_cb(target, result):
+                    # Store in Redis/Global
+                    FUZZ_RESULTS.insert(0, result)
+                    if len(FUZZ_RESULTS) > 100: FUZZ_RESULTS.pop()
+                    
+                    ACTIVE_FUZZ_JOBS[job_id_str]["results_count"] += 1
+                    
+                    # Update MongoDB
+                    try:
+                        # Find which document contains this target (could be IP or URL)
+                        query = {"$or": [
+                            {"http_responseForIP.request": target},
+                            {"https_responseForIP.request": target},
+                            {"http_responseForDomainName.request": target},
+                            {"https_responseForDomainName.request": target},
+                            {"http_responseForIP.ip": target},
+                            {"https_responseForIP.ip": target}
+                        ]}
+                        app.db["sslchecker"].update_one(query, {"$addToSet": {"fuzz_results": result}})
+                    except Exception as e:
+                        print(f"DB Update Error (Fuzz): {e}")
+
+                try:
+                    loop.run_until_complete(fuzzer.run(progress_callback=progress_cb))
+                    ACTIVE_FUZZ_JOBS[job_id_str]["status"] = "completed"
+                except Exception as e:
+                    print(f"Fuzzer Job Error: {e}")
+                    ACTIVE_FUZZ_JOBS[job_id_str]["status"] = "failed"
+                finally:
+                    loop.close()
+
+        # Get the actual app object from the proxy
+        app_instance = current_app._get_current_object()
+        thread = threading.Thread(target=run_fuzzer_thread, args=(app_instance, targets, job_id))
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({"job_id": job_id, "message": "Fuzzing started"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@main_bp.route("/fuzz/status", methods=["GET"])
+def get_fuzz_status():
+    """Returns status of all fuzzing jobs and recent hits."""
+    return jsonify({
+        "jobs": ACTIVE_FUZZ_JOBS,
+        "recent_hits": FUZZ_RESULTS[:20]
+    })
 
 
 def _get_field_paths(field: str) -> list:
@@ -357,3 +522,72 @@ def get_result_detail(result_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ==================== SETTINGS & TOOLS MANAGEMENT ====================
+
+@main_bp.route("/settings/get", methods=["GET"])
+def get_settings():
+    """Get current API key settings (values are masked for security)."""
+    checker = get_tools_checker()
+    settings = checker.get_settings()
+    
+    # Mask sensitive values except for indication if set
+    masked = {}
+    for key, value in settings.items():
+        if value:
+            # Show first 4 and last 4 chars only
+            if len(value) > 12:
+                masked[key] = value[:4] + "*" * 8 + value[-4:]
+            else:
+                masked[key] = value  # Short values shown as-is
+        else:
+            masked[key] = ""
+    
+    return jsonify(masked)
+
+
+@main_bp.route("/settings/save", methods=["POST"])
+def save_settings():
+    """Save API key settings."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "No data provided"}), 400
+    
+    # Filter only valid API key settings
+    valid_keys = [
+        "SHODAN_API_KEY", "CENSYS_API_ID", "CENSYS_API_SECRET",
+        "SECURITYTRAILS_KEY", "CHAOS_API_KEY", "ZOOMEYE_API_KEY",
+        "FOFA_EMAIL", "FOFA_KEY", "VT_API_KEY", "FACEBOOK_CT_TOKEN"
+    ]
+    
+    filtered = {k: v for k, v in data.items() if k in valid_keys and v}
+    
+    checker = get_tools_checker()
+    success = checker.save_settings(filtered)
+    
+    return jsonify({"success": success})
+
+
+@main_bp.route("/tools/status", methods=["GET"])
+def get_tools_status():
+    """Get status of all recon tools (installed, API keys, etc.)."""
+    checker = get_tools_checker()
+    checker.clear_cache()  # Force fresh check
+    status = checker.get_full_status()
+    return jsonify(status)
+
+
+@main_bp.route("/tools/install", methods=["POST"])
+def install_tool():
+    """Install a specific tool."""
+    data = request.get_json()
+    tool_id = data.get("tool_id")
+    package_manager = data.get("package_manager", "auto")
+    
+    if not tool_id:
+        return jsonify({"success": False, "message": "No tool_id provided"}), 400
+    
+    checker = get_tools_checker()
+    success, message = checker.install_tool(tool_id, package_manager)
+    
+    return jsonify({"success": success, "message": message})

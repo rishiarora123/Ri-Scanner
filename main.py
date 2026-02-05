@@ -14,7 +14,7 @@ def open_browser():
     time.sleep(2)
     try:
         webbrowser.open("http://127.0.0.1:5000/")
-    except:
+    except Exception:
         pass
 
 if __name__ == "__main__":

@@ -1,0 +1,542 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="text-center mb-lg">
+        <h1 class="gradient-text">⚙️ Settings</h1>
+        <p class="text-muted">Configure API keys and check tool availability</p>
+    </div>
+
+    <div class="grid-2">
+        <!-- API Keys Configuration -->
+        <div class="glass card">
+            <div class="card-header">
+                <h2 style="margin: 0;">🔑 API Keys</h2>
+                <p class="text-muted" style="margin-top: 0.5rem; font-size: 0.9rem;">
+                    Configure your API keys here. Settings override .env file values.
+                </p>
+            </div>
+
+            <form id="api-keys-form">
+                <!-- Shodan -->
+                <div class="form-group">
+                    <label class="form-label">
+                        Shodan API Key
+                        <a href="https://account.shodan.io" target="_blank"
+                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
+                    </label>
+                    <input type="password" class="form-input" name="SHODAN_API_KEY" id="SHODAN_API_KEY"
+                        placeholder="Enter Shodan API key">
+                </div>
+
+                <!-- Censys -->
+                <div class="form-group">
+                    <label class="form-label">
+                        Censys API ID
+                        <a href="https://search.censys.io/account/api" target="_blank"
+                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
+                    </label>
+                    <input type="password" class="form-input" name="CENSYS_API_ID" id="CENSYS_API_ID"
+                        placeholder="Enter Censys API ID">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Censys API Secret</label>
+                    <input type="password" class="form-input" name="CENSYS_API_SECRET" id="CENSYS_API_SECRET"
+                        placeholder="Enter Censys API Secret">
+                </div>
+
+                <!-- SecurityTrails -->
+                <div class="form-group">
+                    <label class="form-label">
+                        SecurityTrails API Key
+                        <a href="https://securitytrails.com/app/account" target="_blank"
+                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
+                    </label>
+                    <input type="password" class="form-input" name="SECURITYTRAILS_KEY" id="SECURITYTRAILS_KEY"
+                        placeholder="Enter SecurityTrails key">
+                </div>
+
+                <!-- Chaos -->
+                <div class="form-group">
+                    <label class="form-label">
+                        Chaos API Key (ProjectDiscovery)
+                        <a href="https://chaos.projectdiscovery.io" target="_blank"
+                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
+                    </label>
+                    <input type="password" class="form-input" name="CHAOS_API_KEY" id="CHAOS_API_KEY"
+                        placeholder="Enter Chaos API key">
+                </div>
+
+                <!-- ZoomEye -->
+                <div class="form-group">
+                    <label class="form-label">
+                        ZoomEye API Key
+                        <a href="https://www.zoomeye.org/profile" target="_blank"
+                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
+                    </label>
+                    <input type="password" class="form-input" name="ZOOMEYE_API_KEY" id="ZOOMEYE_API_KEY"
+                        placeholder="Enter ZoomEye API key">
+                </div>
+
+                <!-- FOFA -->
+                <div class="form-group">
+                    <label class="form-label">
+                        FOFA Email
+                        <a href="https://en.fofa.info" target="_blank"
+                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
+                    </label>
+                    <input type="email" class="form-input" name="FOFA_EMAIL" id="FOFA_EMAIL"
+                        placeholder="Enter FOFA email">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">FOFA API Key</label>
+                    <input type="password" class="form-input" name="FOFA_KEY" id="FOFA_KEY"
+                        placeholder="Enter FOFA key">
+                </div>
+
+                <!-- VirusTotal -->
+                <div class="form-group">
+                    <label class="form-label">
+                        VirusTotal API Key
+                        <a href="https://www.virustotal.com/gui/my-apikey" target="_blank"
+                            style="color: var(--primary); font-size: 0.8rem;">(Get Key)</a>
+                    </label>
+                    <input type="password" class="form-input" name="VT_API_KEY" id="VT_API_KEY"
+                        placeholder="Enter VirusTotal API key">
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full mt-md">
+                    💾 Save API Keys
+                </button>
+            </form>
+
+            <div id="save-status" style="margin-top: 1rem; text-align: center; display: none;"></div>
+        </div>
+
+        <!-- Tools Status -->
+        <div class="glass card">
+            <div class="card-header">
+                <h2 style="margin: 0;">🧰 Tools Status</h2>
+                <p class="text-muted" style="margin-top: 0.5rem; font-size: 0.9rem;">
+                    Check which tools are installed and ready to use
+                </p>
+            </div>
+
+            <!-- Summary Stats -->
+            <div class="stat-grid mb-md" id="tools-summary">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-tools">--</div>
+                    <div class="stat-label">Total Tools</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: var(--success);" id="installed-tools">--</div>
+                    <div class="stat-label">Installed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: var(--warning);" id="missing-cli">--</div>
+                    <div class="stat-label">Missing</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: var(--primary);" id="api-ready">--</div>
+                    <div class="stat-label">API Ready</div>
+                </div>
+            </div>
+
+            <button onclick="checkToolsStatus()" class="btn btn-secondary btn-full mb-md">
+                🔄 Refresh Status
+            </button>
+
+            <button onclick="showInstallModal()" class="btn btn-success btn-full mb-md">
+                📦 Install Missing Tools
+            </button>
+
+            <!-- Tools List -->
+            <div id="tools-list" style="max-height: 400px; overflow-y: auto;">
+                <div class="text-muted text-center" style="padding: 2rem;">
+                    Click "Refresh Status" to check tools
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Install Modal -->
+<div id="install-modal-overlay" class="modal-overlay"></div>
+<div id="install-modal" class="glass modal" style="max-width: 600px;">
+    <h3 class="modal-title">Install Missing Tools</h3>
+    <p class="modal-body">
+        Select which tools to install. Installation requires appropriate package managers (Go, Brew, Pip).
+    </p>
+
+    <!-- Select All Controls -->
+    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+        <button onclick="selectAllTools()" class="btn btn-outline" style="flex: 1;">✅ Select All</button>
+        <button onclick="deselectAllTools()" class="btn btn-outline" style="flex: 1;">❌ Deselect All</button>
+    </div>
+
+    <!-- Progress Counter -->
+    <div id="install-progress"
+        style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(124, 58, 237, 0.1); border-radius: var(--radius-sm);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span id="install-progress-text">Installing...</span>
+            <span id="install-progress-counter" style="font-weight: 700; color: var(--primary);">0 / 0</span>
+        </div>
+        <div class="progress-bar" style="margin-top: 0.5rem;">
+            <div id="install-progress-bar" class="progress-fill" style="width: 0%; height: 6px;"></div>
+        </div>
+    </div>
+
+    <div id="install-tools-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 1rem;">
+        <!-- Tools will be populated here -->
+    </div>
+    <div class="modal-actions">
+        <button id="install-btn" onclick="installSelectedTools()" class="btn btn-success">📦 Install Selected</button>
+        <button onclick="closeInstallModal()" class="btn btn-outline">Cancel</button>
+    </div>
+</div>
+
+<style>
+    .tool-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: var(--radius-sm);
+        margin-bottom: 0.5rem;
+        border: 1px solid var(--glass-border);
+    }
+
+    .tool-item .tool-info {
+        flex: 1;
+    }
+
+    .tool-item .tool-name {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .tool-item .tool-desc {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .tool-item .tool-status {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .status-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 100px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+
+    .status-badge.installed {
+        background: rgba(16, 185, 129, 0.2);
+        color: var(--success);
+    }
+
+    .status-badge.missing {
+        background: rgba(239, 68, 68, 0.2);
+        color: var(--danger);
+    }
+
+    .status-badge.api-only {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--secondary);
+    }
+
+    .status-badge.api-ok {
+        background: rgba(124, 58, 237, 0.2);
+        color: var(--primary);
+    }
+
+    .status-badge.api-missing {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--warning);
+    }
+
+    .category-header {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 1rem 0 0.5rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--glass-border);
+    }
+
+    .install-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: var(--radius-sm);
+        margin-bottom: 0.5rem;
+    }
+
+    .install-item input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+    }
+</style>
+
+<script>
+    let toolsData = null;
+
+    // Load current settings on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadCurrentSettings();
+        await checkToolsStatus();
+    });
+
+    async function loadCurrentSettings() {
+        try {
+            const res = await fetch('/settings/get');
+            const settings = await res.json();
+
+            // Populate form fields
+            for (const [key, value] of Object.entries(settings)) {
+                const input = document.getElementById(key);
+                if (input && value) {
+                    input.value = value;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load settings:', e);
+        }
+    }
+
+    // Save API keys
+    document.getElementById('api-keys-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData(e.target);
+        const settings = {};
+
+        for (const [key, value] of formData.entries()) {
+            if (value.trim()) {
+                settings[key] = value.trim();
+            }
+        }
+
+        try {
+            const res = await fetch('/settings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+
+            const result = await res.json();
+            const statusDiv = document.getElementById('save-status');
+            statusDiv.style.display = 'block';
+
+            if (result.success) {
+                statusDiv.innerHTML = '<span style="color: var(--success);">✅ Settings saved successfully!</span>';
+                // Refresh tools status to reflect API key changes
+                await checkToolsStatus();
+            } else {
+                statusDiv.innerHTML = '<span style="color: var(--danger);">❌ Failed to save settings</span>';
+            }
+
+            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+        } catch (e) {
+            console.error('Save error:', e);
+        }
+    });
+
+    async function checkToolsStatus() {
+        const list = document.getElementById('tools-list');
+        list.innerHTML = '<div class="text-center" style="padding: 2rem;"><div class="spinner"></div> Checking tools...</div>';
+
+        try {
+            const res = await fetch('/tools/status');
+            toolsData = await res.json();
+
+            // Update summary
+            document.getElementById('total-tools').innerText = toolsData.summary.total;
+            document.getElementById('installed-tools').innerText = toolsData.summary.installed;
+            document.getElementById('missing-cli').innerText = toolsData.summary.missing_cli;
+            document.getElementById('api-ready').innerText = toolsData.summary.api_ready;
+
+            // Render tools list
+            let html = '';
+            for (const [catId, cat] of Object.entries(toolsData.categories)) {
+                html += `<div class="category-header">${cat.icon} ${cat.name}</div>`;
+
+                for (const tool of cat.tools) {
+                    html += renderToolItem(tool);
+                }
+            }
+
+            list.innerHTML = html;
+        } catch (e) {
+            list.innerHTML = '<div style="color: var(--danger); padding: 1rem;">Error checking tools</div>';
+        }
+    }
+
+    function renderToolItem(tool) {
+        let statusBadges = '';
+
+        if (tool.is_api_only) {
+            statusBadges += '<span class="status-badge api-only">API</span>';
+        } else if (tool.installed) {
+            statusBadges += '<span class="status-badge installed">✓ Installed</span>';
+        } else {
+            statusBadges += '<span class="status-badge missing">✗ Missing</span>';
+        }
+
+        if (tool.requires_api) {
+            if (tool.api_configured) {
+                statusBadges += '<span class="status-badge api-ok">🔑 API OK</span>';
+            } else {
+                statusBadges += '<span class="status-badge api-missing">⚠️ Need API Key</span>';
+            }
+        }
+
+        return `
+            <div class="tool-item">
+                <div class="tool-info">
+                    <div class="tool-name">${tool.name}</div>
+                    <div class="tool-desc">${tool.description}</div>
+                </div>
+                <div class="tool-status">
+                    ${statusBadges}
+                </div>
+            </div>
+        `;
+    }
+
+    function showInstallModal() {
+        if (!toolsData) {
+            alert('Please refresh tools status first');
+            return;
+        }
+
+        const list = document.getElementById('install-tools-list');
+        let html = '';
+
+        // Get missing CLI tools
+        for (const [catId, cat] of Object.entries(toolsData.categories)) {
+            const missingTools = cat.tools.filter(t => !t.installed && !t.is_api_only);
+            if (missingTools.length > 0) {
+                html += `<div class="category-header">${cat.name}</div>`;
+                for (const tool of missingTools) {
+                    const installCmds = Object.entries(tool.install_cmds || {})
+                        .map(([pm, cmd]) => `<code style="font-size:0.75rem">${pm}: ${cmd}</code>`)
+                        .join('<br>');
+
+                    html += `
+                        <div class="install-item">
+                            <input type="checkbox" value="${tool.id}" class="install-checkbox">
+                            <div>
+                                <strong>${tool.name}</strong>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);">${installCmds || 'Manual install required'}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        if (!html) {
+            html = '<div style="text-align: center; padding: 2rem; color: var(--success);">✅ All tools installed!</div>';
+        }
+
+        list.innerHTML = html;
+        document.getElementById('install-modal').classList.add('active');
+        document.getElementById('install-modal-overlay').classList.add('active');
+    }
+
+    function closeInstallModal() {
+        document.getElementById('install-modal').classList.remove('active');
+        document.getElementById('install-modal-overlay').classList.remove('active');
+    }
+
+    function selectAllTools() {
+        document.querySelectorAll('.install-checkbox').forEach(cb => cb.checked = true);
+    }
+
+    function deselectAllTools() {
+        document.querySelectorAll('.install-checkbox').forEach(cb => cb.checked = false);
+    }
+
+    async function installSelectedTools() {
+        const checkboxes = document.querySelectorAll('.install-checkbox:checked');
+        const toolIds = Array.from(checkboxes).map(cb => cb.value);
+
+        if (toolIds.length === 0) {
+            alert('Please select at least one tool');
+            return;
+        }
+
+        // Show progress UI
+        const progressDiv = document.getElementById('install-progress');
+        const progressText = document.getElementById('install-progress-text');
+        const progressCounter = document.getElementById('install-progress-counter');
+        const progressBar = document.getElementById('install-progress-bar');
+        const installBtn = document.getElementById('install-btn');
+        const list = document.getElementById('install-tools-list');
+
+        progressDiv.style.display = 'block';
+        installBtn.disabled = true;
+        installBtn.innerHTML = '⏳ Installing...';
+
+        const total = toolIds.length;
+        let completed = 0;
+        const results = [];
+
+        // Build results area
+        list.innerHTML = '<div id="install-results" style="padding: 0.5rem;"></div>';
+        const resultsDiv = document.getElementById('install-results');
+
+        // Install tools one by one with progress updates
+        for (const toolId of toolIds) {
+            const remaining = total - completed;
+            progressText.innerHTML = `Installing <strong>${toolId}</strong>...`;
+            progressCounter.innerText = `${remaining} remaining`;
+            progressBar.style.width = `${(completed / total) * 100}%`;
+
+            try {
+                const res = await fetch('/tools/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tool_id: toolId })
+                });
+                const result = await res.json();
+                results.push({ tool: toolId, ...result });
+
+                // Add result to display immediately
+                const icon = result.success ? '✅' : '❌';
+                const color = result.success ? 'var(--success)' : 'var(--danger)';
+                resultsDiv.innerHTML += `<div style="margin-bottom: 0.25rem; color: ${color}; font-size: 0.9rem;">${icon} ${toolId}: ${result.message}</div>`;
+            } catch (e) {
+                results.push({ tool: toolId, success: false, message: e.message });
+                resultsDiv.innerHTML += `<div style="margin-bottom: 0.25rem; color: var(--danger); font-size: 0.9rem;">❌ ${toolId}: ${e.message}</div>`;
+            }
+
+            completed++;
+        }
+
+        // Complete
+        progressBar.style.width = '100%';
+        progressText.innerHTML = '✅ Installation Complete!';
+        progressCounter.innerText = `${results.filter(r => r.success).length} / ${total} succeeded`;
+
+        installBtn.innerHTML = '📦 Install Selected';
+        installBtn.disabled = false;
+
+        // Refresh status after install
+        setTimeout(async () => {
+            closeInstallModal();
+            progressDiv.style.display = 'none';
+            await checkToolsStatus();
+        }, 2000);
+    }
+</script>
+{% endblock %}

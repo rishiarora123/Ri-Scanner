@@ -37,7 +37,7 @@ if [ -z "$DOMAIN" ]; then echo "❌ Error: Domain (-d) is required"; usage; fi
 mkdir -p "Tmp"
 DATA_DIR="Tmp/${DOMAIN}_data"
 mkdir -p "$DATA_DIR"
-ABS_DIR=$(readlink -f "$DATA_DIR")
+ABS_DIR=$(cd "$DATA_DIR" && pwd)
 
 echo "--------------------------------------------------"
 echo "🛠️  DEBUG MODE: RECON FOR $DOMAIN"
