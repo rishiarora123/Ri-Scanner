@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+
+{% block title %}ASN Scanner - Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Page Header -->
+    <div class="text-center mb-lg">
+        <h1 class="gradient-text">🏢 Network Scanner (ASN)</h1>
+        <p class="text-muted" style="font-size: 1.1rem;">
+            Find all servers and websites owned by an organization using their Network ID
+        </p>
+    </div>
+
+    <!-- Help Card -->
+    <div class="glass card mb-lg" style="background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3);">
+        <h3 style="margin: 0 0 1rem 0; color: var(--secondary);">❓ What is an ASN?</h3>
+        <p style="margin-bottom: 0.5rem;">
+            An <strong>Autonomous System Number (ASN)</strong> is like a network ID that identifies who owns a group of
+            servers.
+            For example, Google's main ASN is <code>AS15169</code>.
+        </p>
+        <p style="margin: 0;">
+            <strong>How to find an ASN:</strong> Search for the company name + "ASN" on Google, or use
+            <a href="https://bgp.he.net/" target="_blank" style="color: var(--secondary);">bgp.he.net</a>
+        </p>
+    </div>
+
+    <div class="grid-2">
+        <!-- Left: ASN Input -->
+        <div class="glass card">
+            <h2 style="margin-top: 0;">🔍 Start Network Scan</h2>
+
+            <form id="asn-scan-form" onsubmit="startASNScan(event)">
+                <div class="form-group">
+                    <label class=" form-label">
+                        Network IDs (ASNs)
+                        <span class="help-icon"
+                            title="Enter one or more ASNs separated by commas. Format: AS15169 or 15169">ℹ️</span>
+                    </label>
+                    <textarea id="asn-input" name="asns" class="form-input" placeholder="Examples:
+AS15169 (Google)
+AS16509 (Amazon AWS)
+AS32934 (Facebook)
+
+Separate multiple ASNs with commas or spaces"
+                        style="height: 150px; resize: vertical; font-family: 'JetBrains Mono', monospace;"
+                        required></textarea>
+                    <small class="form-help">Tip: Remove "AS" prefix if needed - both AS15169 and 15169 work</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">
+                        Scan Speed
+                        <span class="help-icon"
+                            title="Higher = faster but more aggressive. Default 10,000 is recommended for most cases">ℹ️</span>
+                    </label>
+                    <select class="form-input" name="masscan_rate">
+                        <option value="5000">🐢 Slow & Stealthy (5,000 packets/sec)</option>
+                        <option value="10000" selected>⚖️ Balanced (10,000 packets/sec) - Recommended</option>
+                        <option value="25000">⚡ Fast (25,000 packets/sec)</option>
+                        <option value="50000">🚀 Very Fast (50,000 packets/sec)</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full">
+                    <span class="btn-text">🚀 Start Network Scan</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </form>
+
+            <!-- Quick Examples -->
+            <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--glass-border);">
+                <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-secondary);">Quick Examples
+                    (click to use):</h4>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <button onclick="fillExample('AS15169')" class="btn btn-outline"
+                        style="font-size: 0.85rem; padding: 0.5rem 1rem;">Google</button>
+                    <button onclick="fillExample('AS16509')" class="btn btn-outline"
+                        style="font-size: 0.85rem; padding: 0.5rem 1rem;">Amazon AWS</button>
+                    <button onclick="fillExample('AS32934')" class="btn btn-outline"
+                        style="font-size: 0.85rem; padding: 0.5rem 1rem;">Facebook</button>
+                    <button onclick="fillExample('AS8075')" class="btn btn-outline"
+                        style="font-size: 0.85rem; padding: 0.5rem 1rem;">Microsoft</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: ASN Scan History -->
+        <div class="glass card">
+            <div class="flex-between mb-md">
+                <h2 style="margin: 0;">📊 Scan History</h2>
+                <button onclick="loadASNHistory()" class="btn btn-outline"
+                    style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+                    🔄 Refresh
+                </button>
+            </div>
+
+            <div id="asn-history-container" style="max-height: 400px; overflow-y: auto;">
+                <div class="text-center" style="padding: 3rem; color: var(--text-muted);">
+                    <p>No scans yet</p>
+                    <p style="font-size: 0.85rem;">Start your first ASN scan to see results here</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Section (Hidden until scan starts) -->
+    <div id="asn-results-section" class="glass card mt-lg hidden">
+        <div class="flex-between mb-md">
+            <h2 style="margin: 0;">🌐 Discovered Networks</h2>
+            <div style="display: flex; gap: 0.5rem;">
+                <button onclick="exportASNResults()" class="btn btn-outline"
+                    style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+                    📥 Export
+                </button>
+                <button onclick="viewSubdomains()" class="btn btn-primary"
+                    style="padding: 0.5rem 1rem; font-size: 0.85rem;">
+                    📋 View All Subdomains
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stat-grid mb-md" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="stat-card">
+                <div id="stat-ip-ranges" class="stat-value">0</div>
+                <div class="stat-label">IP Ranges Found</div>
+            </div>
+            <div class="stat-card">
+                <div id="stat-total-ips" class="stat-value">0</div>
+                <div class="stat-label">Total IP Addresses</div>
+            </div>
+            <div class="stat-card">
+                <div id="stat-servers-found" class="stat-value">0</div>
+                <div class="stat-label">Active Servers</div>
+            </div>
+            <div class="stat-card">
+                <div id="stat-websites-found" class="stat-value">0</div>
+                <div class="stat-label">Websites Found</div>
+            </div>
+        </div>
+
+        <!-- IP Ranges Table -->
+        <div style="overflow-x: auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Network Range (CIDR)</th>
+                        <th>Total IPs</th>
+                        <th>Active Servers</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="ip-ranges-table">
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+                            Start a scan to see networks here
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .form-help {
+        display: block;
+        margin-top: 0.25rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .help-icon {
+        cursor: help;
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        background: rgba(59, 130, 246, 0.2);
+        border-radius: 50%;
+        font-size: 0.7rem;
+        margin-left: 0.25rem;
+    }
+
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid var(--glass-border);
+    }
+
+    .data-table th {
+        background: rgba(255, 255, 255, 0.03);
+        font-weight: 600;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        text-transform: uppercase;
+    }
+
+    .data-table tr:hover {
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .history-card {
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: var(--radius-md);
+        border-left: 3px solid var(--primary);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .history-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        transform: translateX(4px);
+    }
+
+    .badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 100px;
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+
+    .badge-success {
+        background: rgba(16, 185, 129, 0.2);
+        color: var(--success);
+    }
+
+    .badge-warning {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--warning);
+    }
+
+    .badge-info {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--secondary);
+    }
+</style>
+
+<script>
+    // Fill example ASN
+    function fillExample(asn) {
+        document.getElementById('asn-input').value = asn;
+    }
+
+    // Start ASN scan
+    async function startASNScan(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        formData.append('mode', 'asn_list');
+
+        const btn = form.querySelector('button[type="submit"]');
+        const spinner = btn.querySelector('.spinner');
+        const btnText = btn.querySelector('.btn-text');
+        const originalText = btnText.innerText;
+
+        btnText.innerText = 'Starting scan...';
+        spinner.classList.remove('hidden');
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/start_scan', { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (data.status === 'started') {
+                alert(' ✅ Scan started! Redirecting to dashboard...');
+                window.location.href = '/dashboard';
+            } else {
+                alert('Error: ' + (data.error || JSON.stringify(data)));
+                resetButton();
+            }
+        } catch (err) {
+            alert('❌ Request Failed: ' + err.message);
+            resetButton();
+        }
+
+        function resetButton() {
+            btnText.innerText = originalText;
+            spinner.classList.add('hidden');
+            btn.disabled = false;
+        }
+    }
+
+    // Load ASN scan history
+    async function loadASNHistory() {
+        const container = document.getElementById('asn-history-container');
+        container.innerHTML = '<div class="text-center" style="padding: 2rem;"><div class="spinner"></div> Loading...</div>';
+
+        try {
+            const res = await fetch('/asn/history');
+            const data = await res.json();
+
+            if (data.success && data.scans.length > 0) {
+                container.innerHTML = data.scans.map(scan => `
+                    <div class="history-card" onclick="loadASNScan('${scan.scan_id}')">
+                        <div class="flex-between">
+                            <div>
+                                <div style="font-weight: 600; margin-bottom: 0.25rem;">${scan.asn_numbers.join(', ')}</div>
+                                <div style="font-size: 0.85rem; color: var(--text-muted);">
+                                    ${scan.total_ips} IPs • ${scan.servers_found} servers • ${new Date(scan.created_at).toLocaleString()}
+                                </div>
+                            </div>
+                            <span class="badge badge-${scan.status === 'completed' ? 'success' : 'warning'}">${scan.status}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = `
+                    <div class="text-center" style="padding: 3rem; color: var(--text-muted);">
+                        <p>No scans yet</p>
+                        <p style="font-size: 0.85rem;">Start your first ASN scan to see results here</p>
+                    </div>
+                `;
+            }
+        } catch (err) {
+            container.innerHTML = `<div style="color: var(--danger); padding: 1rem;">Error loading history: ${err.message}</div>`;
+        }
+    }
+
+    // Load specific ASN scan results
+    async function loadASNScan(scanId) {
+        // Show results section
+        document.getElementById('asn-results-section').classList.remove('hidden');
+
+        try {
+            const res = await fetch(`/asn/results/${scanId}`);
+            const data = await res.json();
+
+            if (data.success) {
+                // Update stats
+                document.getElementById('stat-ip-ranges').innerText = data.ip_ranges.length;
+                document.getElementById('stat-total-ips').innerText = data.total_ips;
+                document.getElementById('stat-servers-found').innerText = data.servers_found;
+                document.getElementById('stat-websites-found').innerText = data.websites_found;
+
+                // Update table
+                const tbody = document.getElementById('ip-ranges-table');
+                tbody.innerHTML = data.ip_ranges.map(range => `
+                    <tr>
+                        <td><code>${range.cidr}</code></td>
+                        <td>${range.total_ips}</td>
+                        <td>${range.active_servers}</td>
+                        <td><span class="badge badge-${range.scan_status === 'completed' ? 'success' : 'info'}">${range.scan_status}</span></td>
+                        <td>
+                            <button onclick="window.location.href='/results?cidr=${range.cidr}'" class="btn btn-sm btn-primary">
+                                View Details
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        } catch (err) {
+            alert('Error loading scan results: ' + err.message);
+        }
+    }
+
+    // Export ASN results
+    function exportASNResults() {
+        // TODO: Implement export
+        alert('Export functionality coming soon!');
+    }
+
+    // View all subdomains from ASN scan
+    function viewSubdomains() {
+        window.location.href = '/subdomains';
+    }
+
+    // Load history on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        loadASNHistory();
+    });
+</script>
+{% endblock %}

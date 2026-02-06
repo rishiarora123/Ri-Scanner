@@ -65,6 +65,12 @@ def results_page():
 def settings_page():
     return render_template("settings.html")
 
+# NEW ROUTES - ASN Tab
+@main_bp.route("/asn")
+def asn_page():
+    """ASN scanner page."""
+    return render_template("asn.html")
+
 # NEW ROUTES - Subdomains Tab
 @main_bp.route("/subdomains")
 def subdomains_page():
@@ -243,35 +249,71 @@ def get_crawler_results(scan_id, domain):
 # EXISTING ROUTES (keep all existing routes below)
 @main_bp.route("/start_scan", methods=["POST"])
 def start_scan():
+    """Start a new scan with input validation and user-friendly error messages."""
+    from .validators import (validate_domain, validate_asn_list, validate_file_upload, 
+                             validate_scan_rate, get_friendly_error)
+    from .error_handlers import api_error_handler
+    
     mode = request.form.get("mode")
+    
+    if not mode:
+        return jsonify({"error": "⚠️ Please select a scan mode"}), 400
+    
     target = None
     bgp_url = request.form.get("bgp_url")
-    masscan_rate = int(request.form.get("masscan_rate", 10000))
+    
+    # Validate scan rate
+    masscan_rate_str = request.form.get("masscan_rate", "10000")
+    valid, msg, masscan_rate = validate_scan_rate(masscan_rate_str)
+    if not valid:
+        return jsonify({"error": msg}), 400
+    
     masscan_chunks = int(request.form.get("masscan_chunks", 0))
     
     if not os.path.exists("Tmp"):
         os.makedirs("Tmp")
-
+    
+    # Validate input based on scan mode
     if mode == "recon":
-        target = request.form.get("domain")
+        domain_input = request.form.get("domain", "").strip()
+        valid, result = validate_domain(domain_input)
+        if not valid:
+            return jsonify({"error": result}), 400
+        target = result
+        
     elif mode == "asn_list":
-        target = request.form.get("asns")
+        asns_input = request.form.get("asns", "").strip()
+        valid, msg, asn_list = validate_asn_list(asns_input)
+        if not valid:
+            return jsonify({"error": msg}), 400
+        target = ",".join(asn_list)  # Use normalized ASN list
+        
     elif mode in ["masscan_file", "ip_file"]:
         if 'file' not in request.files:
-            return "No file uploaded", 400
+            return jsonify({"error": get_friendly_error("file_not_selected")}), 400
+        
         file = request.files['file']
-        if file.filename == '':
-            return "No selected file", 400
+        valid, msg = validate_file_upload(file)
+        if not valid:
+            return jsonify({"error": msg}), 400
         
         filename = secure_filename(file.filename)
         save_path = os.path.join("Tmp", filename)
-        file.save(save_path)
+        
+        try:
+            file.save(save_path)
+        except Exception as e:
+            return jsonify({"error": f"📁 Failed to save file: {str(e)}"}), 500
+        
         target = save_path
-
+    
+    else:
+        return jsonify({"error": f"⚠️ Unknown scan mode: {mode}"}), 400
+    
     # Reset Status
     global scan_status, scan_logs, scan_context
     scan_status.update({
-        "phase": "Initializing...", 
+        "phase": "🚀 Initializing scan...", 
         "masscan_progress": 0, "masscan_total": 0, 
         "masscan_ranges_done": 0, "masscan_ranges_total": 0, 
         "masscan_chunks_status": [], 
@@ -279,17 +321,30 @@ def start_scan():
         "found_count": 0, "active_threads": 0,
         "estimated_remaining": "Calculating..."
     })
-    scan_logs = []
-
+    scan_logs = [f"✅ Scan started - Mode: {mode.upper()}", f"🎯 Target: {target}"]
+    
     # Reset Context
     scan_context["stop_event"].clear()
     scan_context["keep_files"] = False
     
     # Run the core logic in a separate thread
-    t = threading.Thread(target=run_async_in_thread, args=(core.run_scan_logic(mode, target, 50, bgp_url, masscan_rate, masscan_chunks, scan_context),))
-    t.start()
+    try:
+        t = threading.Thread(
+            target=run_async_in_thread, 
+            args=(core.run_scan_logic(mode, target, 50, bgp_url, masscan_rate, masscan_chunks, scan_context),)
+        )
+        t.daemon = True
+        t.start()
+        
+        return jsonify({
+            "status": "started",
+            "message": f"✅ Scan started successfully! Target: {target}"
+        })
+    
+    except Exception as e:
+        log_message(f"❌ Failed to start scan: {str(e)}")
+        return jsonify({"error": f"❌ Failed to start scan: {str(e)}"}), 500
 
-    return jsonify({"status": "started"})
 
 @main_bp.route("/stop_scan", methods=["POST"])
 def stop_scan():
@@ -700,3 +755,89 @@ def install_tool():
     success, message = checker.install_tool(tool_id, package_manager)
     
     return jsonify({"success": success, "message": message})
+
+# ASN Routes
+@main_bp.route("/asn/history", methods=["GET"])
+def get_asn_history():
+    """Get ASN scan history from MongoDB."""
+    try:
+        if not hasattr(current_app, 'db') or current_app.db is None:
+            return jsonify({"success": False, "error": "Database not available"}), 500
+        
+        # Get ASN scans from MongoDB (from extraction_results where source is ASN)
+        scans = []
+        
+        # Try to get unique ASN scans
+        pipeline = [
+            {"$match": {"source_context.from_asn": True}},
+            {"$group": {
+                "_id": "$scan_id",
+                "asn_numbers": {"$first": "$source_context.asn_numbers"},
+                "total_ips": {"$sum": 1},
+                "servers_found": {"$sum": 1},
+                "created_at": {"$first": "$discovered_at"},
+                "status": {"$first": "completed"}
+            }},
+            {"$sort": {"created_at": -1}},
+            {"$limit": 50}
+        ]
+        
+        results = list(current_app.db.extraction_results.aggregate(pipeline))
+        
+        for r in results:
+            scans.append({
+                "scan_id": r["_id"],
+                "asn_numbers": r.get("asn_numbers", []),
+                "total_ips": r.get("total_ips", 0),
+                "servers_found": r.get("servers_found", 0),
+                "created_at": r.get("created_at", ""),
+                "status": r.get("status", "completed")
+            })
+        
+        return jsonify({"success": True, "scans": scans})
+    except Exception as e:
+        current_app.logger.error(f"ASN history error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@main_bp.route("/asn/results/<scan_id>", methods=["GET"])
+def get_asn_results(scan_id):
+    """Get results for a specific ASN scan."""
+    try:
+        if not hasattr(current_app, 'db') or current_app.db is None:
+            return jsonify({"success": False, "error": "Database not available"}), 500
+        
+        # Get all results for this scan
+        results = list(current_app.db.extraction_results.find({"scan_id": scan_id}))
+        
+        # Group by IP ranges (simplified - would need proper CIDR calculation)
+        ip_ranges = {}
+        total_ips = 0
+        servers_found = len(results)
+        websites_found = len([r for r in results if r.get("domain")])
+        
+        for r in results:
+            ip = r.get("ip", "")
+            # Simple grouping by /24 network
+            if ip:
+                network = ".".join(ip.split(".")[:3]) + ".0/24"
+                if network not in ip_ranges:
+                    ip_ranges[network] = {
+                        "cidr": network,
+                        "total_ips": 0,
+                        "active_servers": 0,
+                        "scan_status": "completed"
+                    }
+                ip_ranges[network]["total_ips"] += 1
+                ip_ranges[network]["active_servers"] += 1
+                total_ips += 1
+        
+        return jsonify({
+            "success": True,
+            "ip_ranges": list(ip_ranges.values()),
+            "total_ips": total_ips,
+            "servers_found": servers_found,
+            "websites_found": websites_found
+        })
+    except Exception as e:
+        current_app.logger.error(f"ASN results error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
