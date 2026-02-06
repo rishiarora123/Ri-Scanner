@@ -79,9 +79,13 @@ def subdomains_page():
 
 @main_bp.route("/subdomains/list/<scan_id>", methods=["GET"])
 def get_subdomains_list(scan_id):
-    """Get list of all subdomains for a scan."""
+    """Get list of all subdomains for a scan with server-side pagination."""
     try:
         manager = get_subdomain_manager()
+        
+        # Get pagination params
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 50))
         
         # Get filters from query params
         filters = {}
@@ -91,23 +95,23 @@ def get_subdomains_list(scan_id):
             filters["is_new_from_asn"] = request.args.get("is_new_from_asn") == "true"
         if request.args.get("search"):
             filters["search_term"] = request.args.get("search")
+        if request.args.get("status"):
+            filters["status"] = request.args.get("status")
+        if request.args.get("has_site"):
+            filters["has_site"] = request.args.get("has_site")
+        if request.args.get("sort_by"):
+            filters["sort_by"] = request.args.get("sort_by")
         
-        if scan_id == "all" or not scan_id:
-            # Global search across all scans
-            subdomains = manager.search_all_subdomains(filters.get("search_term", ""), limit=500)
-        else:
-            subdomains = manager.get_subdomains(scan_id, filters)
+        # Call manager with pagination
+        data = manager.get_subdomains(scan_id, filters, page=page, per_page=per_page)
         
-        # Apply status code filter if provided
-        status_filter = request.args.get("status")
-        if status_filter:
-            try:
-                status_code = int(status_filter)
-                subdomains = [s for s in subdomains if s.get("status_code") == status_code]
-            except ValueError:
-                pass  # Invalid status code, skip filter
-        
-        return jsonify({"success": True, "subdomains": subdomains})
+        return jsonify({
+            "success": True, 
+            "subdomains": data["subdomains"],
+            "total": data["total"],
+            "page": data["page"],
+            "pages": data["pages"]
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -262,13 +266,32 @@ def start_scan():
     target = None
     bgp_url = request.form.get("bgp_url")
     
-    # Validate scan rate
-    masscan_rate_str = request.form.get("masscan_rate", "10000")
-    valid, msg, masscan_rate = validate_scan_rate(masscan_rate_str)
-    if not valid:
-        return jsonify({"error": msg}), 400
+    # Validate scan speed / rate
+    scan_speed = request.form.get("scan_speed", "balanced")
+    masscan_rate = 1000
+    masscan_chunks = 0
     
-    masscan_chunks = int(request.form.get("masscan_chunks", 0))
+    if scan_speed == "slow":
+        masscan_rate = 500
+    elif scan_speed == "balanced":
+        masscan_rate = 5000
+    elif scan_speed == "fast":
+        masscan_rate = 10000
+    elif scan_speed == "insane":
+        masscan_rate = 50000
+        
+    # Allow override if explicit rate is provided (legacy support)
+    if request.form.get("masscan_rate"):
+        try:
+            masscan_rate = int(request.form.get("masscan_rate"))
+        except:
+            pass
+            
+    if request.form.get("masscan_chunks"):
+         try:
+             masscan_chunks = int(request.form.get("masscan_chunks"))
+         except:
+             pass
     
     if not os.path.exists("Tmp"):
         os.makedirs("Tmp")

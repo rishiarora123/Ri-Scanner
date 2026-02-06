@@ -55,11 +55,11 @@ Separate multiple ASNs with commas or spaces"
                         <span class="help-icon"
                             title="Higher = faster but more aggressive. Default 10,000 is recommended for most cases">ℹ️</span>
                     </label>
-                    <select class="form-input" name="masscan_rate">
-                        <option value="5000">🐢 Slow & Stealthy (5,000 packets/sec)</option>
-                        <option value="10000" selected>⚖️ Balanced (10,000 packets/sec) - Recommended</option>
-                        <option value="25000">⚡ Fast (25,000 packets/sec)</option>
-                        <option value="50000">🚀 Very Fast (50,000 packets/sec)</option>
+                    <select class="form-input" name="scan_speed">
+                        <option value="slow">🐢 Slow & Stealthy (Lower Rate)</option>
+                        <option value="balanced" selected>⚖️ Balanced (Recommended)</option>
+                        <option value="fast">⚡ Fast (High Rate)</option>
+                        <option value="insane">🚀 Insane (Max Rate)</option>
                     </select>
                 </div>
 
@@ -104,65 +104,6 @@ Separate multiple ASNs with commas or spaces"
             </div>
         </div>
     </div>
-
-    <!-- Results Section (Hidden until scan starts) -->
-    <div id="asn-results-section" class="glass card mt-lg hidden">
-        <div class="flex-between mb-md">
-            <h2 style="margin: 0;">🌐 Discovered Networks</h2>
-            <div style="display: flex; gap: 0.5rem;">
-                <button onclick="exportASNResults()" class="btn btn-outline"
-                    style="padding: 0.5rem 1rem; font-size: 0.85rem;">
-                    📥 Export
-                </button>
-                <button onclick="viewSubdomains()" class="btn btn-primary"
-                    style="padding: 0.5rem 1rem; font-size: 0.85rem;">
-                    📋 View All Subdomains
-                </button>
-            </div>
-        </div>
-
-        <!-- Stats -->
-        <div class="stat-grid mb-md" style="grid-template-columns: repeat(4, 1fr);">
-            <div class="stat-card">
-                <div id="stat-ip-ranges" class="stat-value">0</div>
-                <div class="stat-label">IP Ranges Found</div>
-            </div>
-            <div class="stat-card">
-                <div id="stat-total-ips" class="stat-value">0</div>
-                <div class="stat-label">Total IP Addresses</div>
-            </div>
-            <div class="stat-card">
-                <div id="stat-servers-found" class="stat-value">0</div>
-                <div class="stat-label">Active Servers</div>
-            </div>
-            <div class="stat-card">
-                <div id="stat-websites-found" class="stat-value">0</div>
-                <div class="stat-label">Websites Found</div>
-            </div>
-        </div>
-
-        <!-- IP Ranges Table -->
-        <div style="overflow-x: auto;">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Network Range (CIDR)</th>
-                        <th>Total IPs</th>
-                        <th>Active Servers</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="ip-ranges-table">
-                    <tr>
-                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-secondary);">
-                            Start a scan to see networks here
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
 </div>
 {% endblock %}
 
@@ -186,30 +127,6 @@ Separate multiple ASNs with commas or spaces"
         border-radius: 50%;
         font-size: 0.7rem;
         margin-left: 0.25rem;
-    }
-
-    .data-table {
-        width: 100%;
-        border-collapse: collapse;
-    }
-
-    .data-table th,
-    .data-table td {
-        padding: 0.75rem;
-        text-align: left;
-        border-bottom: 1px solid var(--glass-border);
-    }
-
-    .data-table th {
-        background: rgba(255, 255, 255, 0.03);
-        font-weight: 600;
-        color: var(--text-secondary);
-        font-size: 0.85rem;
-        text-transform: uppercase;
-    }
-
-    .data-table tr:hover {
-        background: rgba(255, 255, 255, 0.02);
     }
 
     .history-card {
@@ -243,11 +160,6 @@ Separate multiple ASNs with commas or spaces"
         background: rgba(245, 158, 11, 0.2);
         color: var(--warning);
     }
-
-    .badge-info {
-        background: rgba(59, 130, 246, 0.2);
-        color: var(--secondary);
-    }
 </style>
 
 <script>
@@ -263,6 +175,15 @@ Separate multiple ASNs with commas or spaces"
         const formData = new FormData(form);
         formData.append('mode', 'asn_list');
 
+        // Smart Input Cleanup regex for user friendliness
+        const rawInput = formData.get('asns');
+        // Extract ASXXXX or XXXX numbers
+        const matches = rawInput.match(/(AS)?\d+/gi);
+        if (matches) {
+            const cleanASNs = matches.map(m => m.toUpperCase().startsWith('AS') ? m : 'AS' + m).join(',');
+            formData.set('asns', cleanASNs);
+        }
+
         const btn = form.querySelector('button[type="submit"]');
         const spinner = btn.querySelector('.spinner');
         const btnText = btn.querySelector('.btn-text');
@@ -277,14 +198,17 @@ Separate multiple ASNs with commas or spaces"
             const data = await res.json();
 
             if (data.status === 'started') {
-                alert(' ✅ Scan started! Redirecting to dashboard...');
-                window.location.href = '/dashboard';
+                // Toast or Alert then redirect
+                showToast('✅ Scan started! Redirecting to dashboard...');
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1500);
             } else {
-                alert('Error: ' + (data.error || JSON.stringify(data)));
+                showToast('Error: ' + (data.error || JSON.stringify(data)), 'error');
                 resetButton();
             }
         } catch (err) {
-            alert('❌ Request Failed: ' + err.message);
+            showToast('❌ Request Failed: ' + err.message, 'error');
             resetButton();
         }
 
@@ -293,6 +217,23 @@ Separate multiple ASNs with commas or spaces"
             spinner.classList.add('hidden');
             btn.disabled = false;
         }
+    }
+
+    // Simple Toast Notification (since we removed alerts)
+    function showToast(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.style.position = 'fixed';
+        toast.style.bottom = '20px';
+        toast.style.right = '20px';
+        toast.style.backgroundColor = type === 'error' ? 'var(--danger)' : 'var(--success)';
+        toast.style.color = '#fff';
+        toast.style.padding = '1rem 2rem';
+        toast.style.borderRadius = '8px';
+        toast.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+        toast.style.zIndex = '9999';
+        toast.innerText = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
     }
 
     // Load ASN scan history
@@ -306,10 +247,10 @@ Separate multiple ASNs with commas or spaces"
 
             if (data.success && data.scans.length > 0) {
                 container.innerHTML = data.scans.map(scan => `
-                    <div class="history-card" onclick="loadASNScan('${scan.scan_id}')">
+                    <div class="history-card">
                         <div class="flex-between">
                             <div>
-                                <div style="font-weight: 600; margin-bottom: 0.25rem;">${scan.asn_numbers.join(', ')}</div>
+                                <div style="font-weight: 600; margin-bottom: 0.25rem;">${scan.asn_numbers ? scan.asn_numbers.join(', ') : 'Unknown ASN'}</div>
                                 <div style="font-size: 0.85rem; color: var(--text-muted);">
                                     ${scan.total_ips} IPs • ${scan.servers_found} servers • ${new Date(scan.created_at).toLocaleString()}
                                 </div>
@@ -329,54 +270,6 @@ Separate multiple ASNs with commas or spaces"
         } catch (err) {
             container.innerHTML = `<div style="color: var(--danger); padding: 1rem;">Error loading history: ${err.message}</div>`;
         }
-    }
-
-    // Load specific ASN scan results
-    async function loadASNScan(scanId) {
-        // Show results section
-        document.getElementById('asn-results-section').classList.remove('hidden');
-
-        try {
-            const res = await fetch(`/asn/results/${scanId}`);
-            const data = await res.json();
-
-            if (data.success) {
-                // Update stats
-                document.getElementById('stat-ip-ranges').innerText = data.ip_ranges.length;
-                document.getElementById('stat-total-ips').innerText = data.total_ips;
-                document.getElementById('stat-servers-found').innerText = data.servers_found;
-                document.getElementById('stat-websites-found').innerText = data.websites_found;
-
-                // Update table
-                const tbody = document.getElementById('ip-ranges-table');
-                tbody.innerHTML = data.ip_ranges.map(range => `
-                    <tr>
-                        <td><code>${range.cidr}</code></td>
-                        <td>${range.total_ips}</td>
-                        <td>${range.active_servers}</td>
-                        <td><span class="badge badge-${range.scan_status === 'completed' ? 'success' : 'info'}">${range.scan_status}</span></td>
-                        <td>
-                            <button onclick="window.location.href='/results?cidr=${range.cidr}'" class="btn btn-sm btn-primary">
-                                View Details
-                            </button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-        } catch (err) {
-            alert('Error loading scan results: ' + err.message);
-        }
-    }
-
-    // Export ASN results
-    function exportASNResults() {
-        // TODO: Implement export
-        alert('Export functionality coming soon!');
-    }
-
-    // View all subdomains from ASN scan
-    function viewSubdomains() {
-        window.location.href = '/subdomains';
     }
 
     // Load history on page load

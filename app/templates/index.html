@@ -28,13 +28,12 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">Scan Speed <span class="help-icon"
-                        title="Higher = faster. Default 10,000 is recommended for most cases">ℹ️</span></label>
-                <select name="masscan_rate" class="form-input">
-                    <option value="5000">🐢 Slow (5,000 packets/sec)</option>
-                    <option value="10000" selected>⚖️ Balanced (10,000) - Recommended</option>
-                    <option value="25000">⚡ Fast (25,000)</option>
-                    <option value="50000">🚀 Very Fast (50,000)</option>
+                <label class="form-label">Scan Speed</label>
+                <select name="scan_speed" class="form-input">
+                    <option value="slow">🐢 Slow & Stealthy</option>
+                    <option value="balanced" selected>⚖️ Balanced (Recommended)</option>
+                    <option value="fast">⚡ Fast</option>
+                    <option value="insane">🚀 Insane (Max Rate)</option>
                 </select>
             </div>
 
@@ -77,13 +76,13 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">Masscan Rate</label>
-                <input type="number" name="masscan_rate" class="form-input" value="10000">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Chunks (0=Auto)</label>
-                <input type="number" name="masscan_chunks" class="form-input" value="0">
+                <label class="form-label">Scan Speed</label>
+                <select name="scan_speed" class="form-input">
+                    <option value="slow">🐢 Slow & Stealthy</option>
+                    <option value="balanced" selected>⚖️ Balanced (Recommended)</option>
+                    <option value="fast">⚡ Fast</option>
+                    <option value="insane">🚀 Insane (Max Rate)</option>
+                </select>
             </div>
 
             <button type="submit" class="btn btn-warning btn-full">
@@ -107,13 +106,13 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">Masscan Rate</label>
-                <input type="number" name="masscan_rate" class="form-input" value="10000">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Chunks (0=Auto)</label>
-                <input type="number" name="masscan_chunks" class="form-input" value="0">
+                <label class="form-label">Scan Speed</label>
+                <select name="scan_speed" class="form-input">
+                    <option value="slow">🐢 Slow & Stealthy</option>
+                    <option value="balanced" selected>⚖️ Balanced (Recommended)</option>
+                    <option value="fast">⚡ Fast</option>
+                    <option value="insane">🚀 Insane (Max Rate)</option>
+                </select>
             </div>
 
             <button type="submit" class="btn btn-full" style="background: var(--accent); color: white;">

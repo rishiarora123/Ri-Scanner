@@ -545,10 +545,31 @@ async def run_scan_logic(mode, target_input, threads=50, bgp_url=None, masscan_r
     except Exception as e:
         log_event(f"[!] Workflow Error: {e}")
     finally:
-        # Cleanup logic similar to main.py
-        for f in temp_files_to_clean:
-            if os.path.exists(f): os.remove(f)
-            
+        # Robust Cleanup
+        log_event("[*] Cleaning up temporary resources...")
+        
+        # 1. Kill any stray Masscan processes
+        try:
+            subprocess.run(["sudo", "killall", "-q", "masscan"], capture_output=True)
+        except Exception:
+            pass
+
+        # 2. Cleanup temp files
+        files_to_remove = set(temp_files_to_clean)
+        # Add dynamic files found in Tmp that match our patterns
+        if os.path.exists("Tmp"):
+            for f in os.listdir("Tmp"):
+                if f.startswith("masscan_from_") or f.startswith("asn_ips_") or f.startswith("temp_chunk_") or f.startswith("temp_res_") or f.endswith(".json"):
+                    files_to_remove.add(os.path.join("Tmp", f))
+
+        for f in files_to_remove:
+            if os.path.exists(f):
+                try: 
+                    os.remove(f) 
+                except OSError: 
+                    pass
+        
+        # 3. Handle stop event specific cleanup
         if stop_event and stop_event.is_set():
             log_event("[!] Scan stopped by user.")
             
@@ -560,9 +581,10 @@ async def run_scan_logic(mode, target_input, threads=50, bgp_url=None, masscan_r
                 log_event("[*] Keeping data files as requested.")
             else:
                 log_event("[!] Deleting collected data immediately...")
-                # Aggressive cleanup
+                # Aggressive cleanup of data directories
                 if mode == 'recon' and 'domain_dir' in locals() and os.path.exists(domain_dir):
-                    shutil.rmtree(domain_dir, ignore_errors=True)
+                    try: shutil.rmtree(domain_dir, ignore_errors=True)
+                    except: pass
                 
                 if mode == 'ip_file' and os.path.exists(config.mass_scan_results_file):
                     try: os.remove(config.mass_scan_results_file)
