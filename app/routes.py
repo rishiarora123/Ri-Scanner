@@ -358,30 +358,19 @@ def get_logs_route():
 
 @main_bp.route("/search/title", methods=["GET"])
 def search_title():
-    """Legacy search endpoint for results.html - searches MongoDB for scan results"""
+    """Legacy search endpoint for results.html - searches MongoDB extraction_results"""
     query = request.args.get("q", "")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 50))
     
     results = []
     
-    # Try MongoDB first for actual scan results
+    # Try MongoDB extraction_results collection first
     try:
         if hasattr(current_app, 'db') and current_app.db is not None:
-            # Search in scans collection
             if query:
                 # Search with regex pattern
-                pipeline = [
-                    {"$match": {
-                        "$or": [
-                            {"title": {"$regex": query, "$options": "i"}},
-                            {"domain": {"$regex": query, "$options": "i"}},
-                            {"ip": {"$regex": query, "$options": "i"}}
-                        ]
-                    }},
-                    {"$limit": per_page * page}
-                ]
-                cursor = current_app.db.results.find({
+                cursor = current_app.db.extraction_results.find({
                     "$or": [
                         {"title": {"$regex": query, "$options": "i"}},
                         {"domain": {"$regex": query, "$options": "i"}},
@@ -390,14 +379,19 @@ def search_title():
                 }).limit(per_page * page)
             else:
                 # Get all results
-                cursor = current_app.db.results.find().limit(per_page * page)
+                cursor = current_app.db.extraction_results.find().limit(per_page * page)
             
             results = list(cursor)
             
-            # Clean up MongoDB _id field
+            # Clean up MongoDB _id field and format for frontend
             for r in results:
                 if '_id' in r:
                     del r['_id']
+                # Flatten nested structures for compatibility
+                if 'ssl_info' in r and r['ssl_info'].get('jarm_hash'):
+                    r['jarm_hash'] = r['ssl_info']['jarm_hash']
+                if 'fingerprints' in r and r['fingerprints'].get('favicon_hash'):
+                    r['favicon_hash'] = r['fingerprints']['favicon_hash']
                     
     except Exception as e:
         print(f"MongoDB search error: {e}")
@@ -405,34 +399,51 @@ def search_title():
     # If no MongoDB results, fallback to subdomain search
     if not results:
         manager = get_subdomain_manager()
-        subdomains = manager.search_all_subdomains(query, limit=per_page * page)
         
-        # Format for results.html (it expects specific fields)
-        for r in subdomains:
-            results.append({
-                "domain": r.get("domain"),
-                "ip": r.get("ip", "N/A"),
-                "title": f"Subdomain: {r.get('domain')}",
-                "status_code": r.get("status_code", 200),
-                "technologies": r.get("technologies", []),
-                "source": r.get("source", "recon"),
-                "port": r.get("port", "N/A"),
-                "request": f"https://{r.get('domain')}",
-                "favicon_hash": r.get("favicon_hash", "N/A")
-            })
+        # Query subdomains collection directly
+        try:
+            if hasattr(current_app, 'db') and current_app.db is not None:
+                if query:
+                    cursor = current_app.db.subdomains.find({
+                        "domain": {"$regex": query, "$options": "i"}
+                    }).limit(per_page * page)
+                else:
+                    cursor = current_app.db.subdomains.find().limit(per_page * page)
+                
+                subdomains = list(cursor)
+                
+                # Format for results.html
+                for r in subdomains:
+                    if '_id' in r:
+                        del r['_id']
+                    results.append({
+                        "domain": r.get("domain"),
+                        "ip": r.get("ip", "N/A"),
+                        "title": f"Subdomain: {r.get('domain')}",
+                        "status_code": r.get("status_code", 200),
+                        "technologies": r.get("technologies", []),
+                        "source": r.get("source", "recon"),
+                        "port": r.get("port", "N/A"),
+                        "request": f"https://{r.get('domain')}",
+                        "favicon_hash": r.get("favicon_hash", "N/A")
+                    })
+        except Exception as e:
+            print(f"Subdomain search fallback error: {e}")
         
     return jsonify(results)
 
 @main_bp.route("/insert", methods=["POST"])
 def insert_results():
-    """Receive and save detailed extraction results."""
+    """Receive and save detailed extraction results to extraction_results collection."""
     try:
+        from datetime import datetime
         results = request.get_json()
         if not results or not isinstance(results, list):
              return jsonify({"status": "error", "message": "Invalid format"})
              
         manager = get_subdomain_manager()
         count = 0
+        timestamp = datetime.now().isoformat()
         
         for item in results:
             # Extract inner data (schema agnostic)
@@ -451,20 +462,83 @@ def insert_results():
             if not data: continue
             
             domain = data.get("domain")
-            if not domain: continue
+            ip = data.get("ip")
+            port = data.get("port")
+            if not ip or not port: continue
             
-            # Save details (using domain as scan_id for direct mapping)
-            # This ensures details are available when clicking "View Details"
-            manager.save_domain_details(domain, domain, data)
+            scan_id = domain if domain else f"{ip}:{port}"
             
-            # Also update key info in subdomains list (Status, IP)
-            sub_update = {
+            # Build extraction result document according to schema
+            extraction_doc = {
+                "scan_id": scan_id,
+                "ip": ip,
+                "port": port,
+                "protocol": "https" if port in [443, 8443, 4443] else "http",
                 "domain": domain,
-                "ip": data.get("ip"),
+                "request": data.get("request"),
+                "title": data.get("title"),
                 "status_code": data.get("status_code"),
-                "technologies": data.get("technologies", [])
+                "response_time_ms": data.get("response_time_ms"),
+                "content_length": data.get("content_length"),
+                
+                "technologies": data.get("technologies", []),
+                "waf": data.get("waf"),
+                
+                "ssl_info": {},
+                "fingerprints": {},
+                "response_headers": data.get("response_headers", {}),
+                
+                "redirected_url": data.get("redirected_url"),
+                "final_status_code": data.get("final_status_code", data.get("status_code")),
+                
+                "discovered_at": timestamp,
+                "last_probed": timestamp,
+                
+                "source_context": {
+                    "from_asn": False,  # Will be updated when ASN support is added
+                    "from_subdomain_enum": domain is not None,
+                    "discovery_method": "masscan"
+                }
             }
-            manager.save_subdomains(domain, [sub_update], source="extraction")
+            
+            # Add SSL info if available
+            if data.get("jarm_hash"):
+                extraction_doc["ssl_info"]["jarm_hash"] = data["jarm_hash"]
+            if data.get("cert_subject"):
+                extraction_doc["ssl_info"]["cert_subject"] = data["cert_subject"]
+            if data.get("cert_issuer"):
+                extraction_doc["ssl_info"]["cert_issuer"] = data["cert_issuer"]
+                
+            # Add fingerprints
+            if data.get("favicon_hash"):
+                extraction_doc["fingerprints"]["favicon_hash"] = data["favicon_hash"]
+            if data.get("favicon_url"):
+                extraction_doc["fingerprints"]["favicon_url"] = data["favicon_url"]
+            
+            # Save to MongoDB extraction_results collection
+            try:
+                if hasattr(current_app, 'db') and current_app.db is not None:
+                    current_app.db.extraction_results.update_one(
+                        {"scan_id": scan_id, "ip": ip, "port": port},
+                        {"$set": extraction_doc, "$setOnInsert": {"discovered_at": timestamp}},
+                        upsert=True
+                    )
+            except Exception as e:
+                print(f"MongoDB extraction save error: {e}")
+            
+            # Save details to file (legacy compatibility)
+            if domain:
+                manager.save_domain_details(domain, domain, data)
+                
+                # Also update subdomain info
+                sub_update = {
+                    "domain": domain,
+                    "ip": ip,
+                    "status_code": data.get("status_code"),
+                    "technologies": data.get("technologies", [])
+                }
+                manager.save_subdomains(domain, [sub_update], source="extraction")
+            
             count += 1
             
         return jsonify({"status": "ok", "processed": count})
@@ -485,13 +559,13 @@ def export_results():
 
 @main_bp.route("/search/advanced", methods=["POST"])
 def search_advanced():
-    """Advanced search endpoint with MongoDB support"""
+    """Advanced search endpoint with MongoDB support for extraction_results"""
     data = request.get_json()
     filters = data.get("filters", [])
     
     results = []
     
-    # Try MongoDB first
+    # Try MongoDB extraction_results first
     try:
         if hasattr(current_app, 'db') and current_app.db is not None:
             mongo_query = {}
@@ -513,40 +587,57 @@ def search_advanced():
                 elif operator == "not_equals":
                     mongo_query[field] = {"$ne": value}
             
-            cursor = current_app.db.results.find(mongo_query).limit(100)
+            cursor = current_app.db.extraction_results.find(mongo_query).limit(100)
             results = list(cursor)
             
-            # Clean up MongoDB _id field
+            # Clean up MongoDB _id field and flatten nested structures
             for r in results:
                 if '_id' in r:
                     del r['_id']
+                # Flatten for compatibility
+                if 'ssl_info' in r and r['ssl_info'].get('jarm_hash'):
+                    r['jarm_hash'] = r['ssl_info']['jarm_hash']
+                if 'fingerprints' in r and r['fingerprints'].get('favicon_hash'):
+                    r['favicon_hash'] = r['fingerprints']['favicon_hash']
                     
     except Exception as e:
         print(f"MongoDB advanced search error: {e}")
     
-    # Fallback to simple subdomain search
+    # Fallback to subdomain collection search
     if not results:
         query = ""
         for f in filters:
             if f["field"] in ["domain", "title"]:
                 query = f["value"]
                 break
-                
-        manager = get_subdomain_manager()
-        subdomains = manager.search_all_subdomains(query, limit=100)
         
-        for r in subdomains:
-            results.append({
-                "domain": r.get("domain"),
-                "ip": r.get("ip", "N/A"),
-                "title": f"Subdomain: {r.get('domain')}",
-                "status_code": r.get("status_code", 200),
-                "technologies": r.get("technologies", []),
-                "source": r.get("source", "recon"),
-                "port": r.get("port", "N/A"),
-                "request": f"https://{r.get('domain')}",
-                "favicon_hash": r.get("favicon_hash", "N/A")
-            })
+        try:
+            if hasattr(current_app, 'db') and current_app.db is not None:
+                if query:
+                    cursor = current_app.db.subdomains.find({
+                        "domain": {"$regex": query, "$options": "i"}
+                    }).limit(100)
+                else:
+                    cursor = current_app.db.subdomains.find().limit(100)
+                
+                subdomains = list(cursor)
+                
+                for r in subdomains:
+                    if '_id' in r:
+                        del r['_id']
+                    results.append({
+                        "domain": r.get("domain"),
+                        "ip": r.get("ip", "N/A"),
+                        "title": f"Subdomain: {r.get('domain')}",
+                        "status_code": r.get("status_code", 200),
+                        "technologies": r.get("technologies", []),
+                        "source": r.get("source", "recon"),
+                        "port": r.get("port", "N/A"),
+                        "request": f"https://{r.get('domain')}",
+                        "favicon_hash": r.get("favicon_hash", "N/A")
+                    })
+        except Exception as e:
+            print(f"Subdomain search fallback error: {e}")
     
     return jsonify(results)
 

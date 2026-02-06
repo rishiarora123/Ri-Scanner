@@ -28,7 +28,7 @@ def create_app():
     # Configuration from environment variables with defaults
     app.config.update(
         MONGO_URI=os.getenv("MONGO_URI", "mongodb://localhost:27017/"),
-        MONGO_DB=os.getenv("MONGO_DB", "scannerdb"),
+        MONGO_DB=os.getenv("MONGO_DB", "Ripro"),
         SECRET_KEY=os.getenv("SECRET_KEY", os.urandom(24).hex()),
     )
     
@@ -55,7 +55,7 @@ def create_app():
 
 def _init_db(app: Flask) -> None:
     """
-    Initialize MongoDB connection and attach to Flask app.
+    Initialize MongoDB connection, attach to Flask app, and create indexes.
     
     Args:
         app: Flask application instance
@@ -71,6 +71,9 @@ def _init_db(app: Flask) -> None:
         app.db = client[app.config["MONGO_DB"]]
         print(f"✓ MongoDB connected: {app.config['MONGO_DB']}")
         
+        # Create collections and indexes
+        _create_indexes(app.db)
+        
     except ConnectionFailure as e:
         print(f"✗ MongoDB connection failed: {e}")
         print("  Make sure MongoDB is running: brew services start mongodb-community")
@@ -79,3 +82,55 @@ def _init_db(app: Flask) -> None:
     except Exception as e:
         print(f"✗ MongoDB error: {e}")
         app.db = None
+
+
+def _create_indexes(db) -> None:
+    """
+    Create indexes for all collections in the Ripro database.
+    
+    Args:
+        db: MongoDB database instance
+    """
+    try:
+        # ASN Scans Collection
+        db.asn_scans.create_index("scan_id", unique=True)
+        db.asn_scans.create_index("asn_numbers")
+        db.asn_scans.create_index("created_at")
+        
+        # Subdomains Collection
+        db.subdomains.create_index([("scan_id", 1), ("domain", 1)], unique=True)
+        db.subdomains.create_index("source_type")
+        db.subdomains.create_index("is_from_asn")
+        db.subdomains.create_index("asn_scan_id")
+        db.subdomains.create_index("discovered_at")
+        
+        # Masscan Results Collection
+        db.masscan_results.create_index([("scan_id", 1), ("ip", 1), ("port", 1)], unique=True)
+        db.masscan_results.create_index("asn_scan_id")
+        db.masscan_results.create_index("probed")
+        db.masscan_results.create_index("discovered_at")
+        
+        # Extraction Results Collection
+        db.extraction_results.create_index([("scan_id", 1), ("ip", 1), ("port", 1)])
+        db.extraction_results.create_index("domain")
+        db.extraction_results.create_index("asn_scan_id")
+        db.extraction_results.create_index("status_code")
+        db.extraction_results.create_index("technologies")
+        db.extraction_results.create_index("waf")
+        db.extraction_results.create_index("discovered_at")
+        
+        # Fuzzing Results Collection
+        db.fuzzing_results.create_index([("scan_id", 1), ("domain", 1), ("path", 1)], unique=True)
+        db.fuzzing_results.create_index("domain")
+        db.fuzzing_results.create_index("status_code")
+        db.fuzzing_results.create_index("interesting")
+        
+        # Crawler Results Collection
+        db.crawler_results.create_index([("scan_id", 1), ("domain", 1), ("url", 1)], unique=True)
+        db.crawler_results.create_index("domain")
+        db.crawler_results.create_index("url_type")
+        
+        print("✓ MongoDB indexes created successfully")
+        
+    except Exception as e:
+        print(f"⚠ Index creation warning: {e}")

@@ -20,16 +20,69 @@ class SubdomainManager:
         os.makedirs(scan_dir, exist_ok=True)
         return scan_dir
     
-    def save_subdomains(self, scan_id: str, subdomains: List[Any], source: str = "recon") -> bool:
+    def save_subdomains(self, scan_id: str, subdomains: List[Any], source: str = "recon", asn_scan_id: str = None) -> bool:
         """
-        Save subdomains to file and MongoDB.
+        Save subdomains to MongoDB (individual documents) and file backup.
         
         Args:
             scan_id: Unique scan identifier
             subdomains: List of subdomain strings OR dicts
-            source: Source of subdomains ('recon' or 'asn')
+            source: Source of subdomains ('recon', 'asn', 'extraction', etc.)
+            asn_scan_id: Optional ASN scan ID if source is ASN
         """
         try:
+            timestamp = datetime.now().isoformat()
+            source_type = "asn" if source == "asn" or asn_scan_id else "recon"
+            
+            # Process subdomains for MongoDB (individual documents)
+            processed_count = 0
+            
+            try:
+                from flask import current_app
+                if hasattr(current_app, 'db') and current_app.db is not None:
+                    for item in subdomains:
+                        domain_val = item if isinstance(item, str) else item.get("domain")
+                        if not domain_val:
+                            continue
+                        
+                        # Build document
+                        if isinstance(item, dict):
+                            doc = item.copy()
+                            if "domain" not in doc:
+                                doc["domain"] = domain_val
+                        else:
+                            doc = {"domain": domain_val}
+                        
+                        # Add required fields
+                        doc["scan_id"] = scan_id
+                        doc["source"] = source
+                        doc["source_type"] = source_type
+                        doc["is_from_asn"] = (source_type == "asn")
+                        
+                        if asn_scan_id:
+                            doc["asn_scan_id"] = asn_scan_id
+                        
+                        # Set discovered_at only for new records
+                        update_doc = {
+                            "$set": doc,
+                            "$setOnInsert": {"discovered_at": timestamp}
+                        }
+                        
+                        # Update last_checked for all
+                        update_doc["$set"]["last_checked"] = timestamp
+                        
+                        # Upsert individual subdomain document
+                        current_app.db.subdomains.update_one(
+                            {"scan_id": scan_id, "domain": domain_val},
+                            update_doc,
+                            upsert=True
+                        )
+                        processed_count += 1
+                        
+            except Exception as e:
+                print(f"MongoDB subdomain save error: {e}")
+            
+            # Also save to file as backup (legacy format for compatibility)
             scan_dir = self._get_scan_dir(scan_id)
             file_path = os.path.join(scan_dir, "subdomains.json")
             
@@ -38,41 +91,39 @@ class SubdomainManager:
             
             # Index existing domains for O(1) lookup and update
             existing_map = {s["domain"]: i for i, s in enumerate(data["subdomains"])}
-            timestamp = datetime.now().isoformat()
-            
-            new_subdomains = []
             
             for item in subdomains:
                 domain_val = item if isinstance(item, str) else item.get("domain")
-                if not domain_val: continue
+                if not domain_val:
+                    continue
                 
                 if domain_val in existing_map:
                     # UPDATE existing
                     idx = existing_map[domain_val]
                     if isinstance(item, dict):
-                        # Merge fields
                         data["subdomains"][idx].update(item)
-                        # Ensure we don't overwrite source if it was already there, unless it's new
                         if "source" not in item:
-                             data["subdomains"][idx]["source"] = source
+                            data["subdomains"][idx]["source"] = source
                 else:
                     # INSERT new
                     if isinstance(item, dict):
                         sub_data = item.copy()
-                        if "domain" not in sub_data: sub_data["domain"] = domain_val
-                        if "source" not in sub_data: sub_data["source"] = source
-                        if "added_at" not in sub_data: sub_data["added_at"] = timestamp
-                        if "is_new_from_asn" not in sub_data: sub_data["is_new_from_asn"] = (source == "asn")
+                        if "domain" not in sub_data:
+                            sub_data["domain"] = domain_val
+                        if "source" not in sub_data:
+                            sub_data["source"] = source
+                        if "added_at" not in sub_data:
+                            sub_data["added_at"] = timestamp
+                        sub_data["is_new_from_asn"] = (source_type == "asn")
                     else:
                         sub_data = {
                             "domain": domain_val,
                             "source": source,
                             "added_at": timestamp,
-                            "is_new_from_asn": source == "asn"
+                            "is_new_from_asn": (source_type == "asn")
                         }
                     
                     data["subdomains"].append(sub_data)
-                    new_subdomains.append(sub_data)
                     existing_map[domain_val] = len(data["subdomains"]) - 1
             
             # Update metadata
@@ -81,31 +132,6 @@ class SubdomainManager:
             
             # Save to file
             self._save_json(file_path, data)
-            
-            # Save to MongoDB
-            try:
-                from flask import current_app
-                if hasattr(current_app, 'db') and current_app.db is not None:
-                    # We need to update the whole array or handle upserts carefully.
-                    # For simplicity, we'll replace the subdomains list in MongoDB to match file
-                    # This ensures updates/merges are reflected.
-                    # Optimization: For very large lists, this might be heavy.
-                    # But ensures consistency.
-                    current_app.db.scans.update_one(
-                        {"scan_id": scan_id},
-                        {
-                            "$set": {
-                                "scan_id": scan_id,
-                                "last_updated": timestamp,
-                                "total_subdomains": len(data["subdomains"]),
-                                "subdomains": data["subdomains"] 
-                            }
-                        },
-                        upsert=True
-                    )
-            except Exception as e:
-                # print(f"MongoDB save warning: {e}")
-                pass
             
             return True
         except Exception as e:
