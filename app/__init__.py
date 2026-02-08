@@ -35,6 +35,13 @@ def create_app():
     # Initialize MongoDB connection
     _init_db(app)
     
+    # Initialize SubdomainManager with db reference (for background thread access)
+    if hasattr(app, 'db') and app.db is not None:
+        from .core.subdomain_manager import get_subdomain_manager
+        manager = get_subdomain_manager()
+        manager.set_db(app.db)
+        print("✓ SubdomainManager initialized with MongoDB")
+    
     # Register Blueprints
     from .routes import main_bp
     app.register_blueprint(main_bp)

@@ -22,6 +22,12 @@
             placeholder="Search by title, IP, or domain...">
         <button class="btn btn-primary" onclick="performSearch(1)">Search</button>
         <button class="btn btn-outline" onclick="clearFilters()">Clear Filters</button>
+        <div class="flex gap-xs"
+            style="align-items: center; background: rgba(0,0,0,0.2); padding: 0.25rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--glass-border);">
+            <input type="checkbox" id="auto-refresh-check" onchange="toggleAutoRefresh(this)">
+            <label for="auto-refresh-check"
+                style="font-size: 0.8rem; color: var(--text-secondary); cursor: pointer;">Auto-Refresh</label>
+        </div>
         <button class="btn btn-outline" onclick="toggleFilters()">Advanced UI</button>
         <button id="fuzz-selected-btn" class="btn btn-success hidden" onclick="fuzzSelected()">Fuzz Selected
             (0)</button>
@@ -81,6 +87,8 @@
         style="display: none; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: var(--radius-sm);">
         <button class="btn btn-primary btn-sm" onclick="startFuzz()"
             style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">🔍 Directory Fuzz</button>
+        <button class="btn btn-outline btn-sm" onclick="moveToRecon()"
+            style="padding: 0.25rem 0.75rem; font-size: 0.8rem; margin-left: 0.5rem;">🌐 Send to Website Tab</button>
     </div>
     <div id="detail-content">Loading...</div>
 </div>
@@ -180,6 +188,8 @@
     let filtersVisible = false;
     let filterCount = 0;
     let selectedTargets = new Set();
+    let refreshInterval = null;
+    let lastRefreshCount = 0;
 
     // HTML escape function to prevent XSS
     function escapeHtml(text) {
@@ -308,18 +318,63 @@
             const data = await res.json();
             if (data.error) throw new Error(data.error);
 
+            const total = data.total || (Array.isArray(data) ? data.length : 0);
+
+            // If total has increased, highlight the new count for a moment
+            if (total > lastRefreshCount && lastRefreshCount > 0) {
+                const badge = document.getElementById('total-count');
+                badge.style.color = 'var(--success)';
+                badge.style.transform = 'scale(1.2)';
+                setTimeout(() => {
+                    badge.style.color = '';
+                    badge.style.transform = '';
+                }, 2000);
+            }
+            lastRefreshCount = total;
+
             if (Array.isArray(data)) {
                 totalPages = 1;
                 document.getElementById('total-count').innerText = data.length;
                 renderResults(data);
             } else {
-                totalPages = data.total_pages || 1;
-                document.getElementById('total-count').innerText = data.total || 0;
+                // Calculate total pages
+                const perPage = parseInt(document.getElementById('per-page-select').value);
+                const total = data.total || 0;
+                totalPages = Math.ceil(total / perPage);
+
+                document.getElementById('total-count').innerText = total;
                 renderResults(data.results || []);
             }
             renderPagination();
         } catch (e) {
             console.error('Search error:', e);
+        }
+    }
+
+    // Move to Recon (Websites Tab)
+    async function moveToRecon() {
+        // Get current detailed item
+        const urlElement = document.querySelector('.detail-value a');
+        if (!urlElement) return;
+
+        // Extract domain from URL or text
+        let domain = urlElement.href.replace(/^https?:\/\//, '').split('/')[0];
+
+        try {
+            const res = await fetch('/subdomains/move_to_recon', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain: domain })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('✅ Moved to Websites Tab!');
+                closeModal();
+            } else {
+                alert('❌ Failed: ' + data.error);
+            }
+        } catch (e) {
+            alert('❌ Request Failed');
         }
     }
 
@@ -485,92 +540,113 @@
         const resultData = JSON.parse(cards[idx].dataset.result);
 
         let content = '';
-        const responseTypes = [
-            ['https_responseForIP', 'HTTPS Response (IP)'],
-            ['http_responseForIP', 'HTTP Response (IP)'],
-            ['https_responseForDomainName', 'HTTPS Response (Domain)'],
-            ['http_responseForDomainName', 'HTTP Response (Domain)']
-        ];
 
-        let hasFoundResult = false;
-        responseTypes.forEach(([key, label]) => {
-            if (resultData[key]) {
-                hasFoundResult = true;
-                const data = Array.isArray(resultData[key]) ? resultData[key][0] : resultData[key];
-                if (data) {
-                    content += `
-                    <div class="detail-section">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text-accent);">${label}</h4>
-                        <div class="detail-label">URL</div>
-                        <div class="detail-value"><a href="${data.request}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.request || 'N/A'}</a></div>
-                        <div class="detail-label mt-sm">Title</div>
-                        <div class="detail-value">${data.title || 'N/A'}</div>
-                        <div class="detail-label mt-sm">IP / Port</div>
-                        <div class="detail-value"><a href="http://${data.ip}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.ip || 'N/A'}</a>:${data.port || 'N/A'}</div>
-                        <div class="detail-label mt-sm">Domain</div>
-                        <div class="detail-value"><a href="https://${data.domain}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.domain || 'N/A'}</a></div>
-                        ${data.redirected_url ? `<div class="detail-label mt-sm">Redirected To</div><div class="detail-value">${data.redirected_url}</div>` : ''}
-                        <div class="detail-label mt-sm">Technologies</div>
-                        <div>${(data.technologies || []).map(t => `<span class="tag tag-tech">${t}</span>`).join(' ') || 'None'}</div>
-                        ${data.waf ? `<div class="detail-label mt-sm">WAF</div><div><span class="tag tag-waf">${data.waf}</span></div>` : ''}
-                        <div class="detail-label mt-sm">Favicon Hash</div>
-                        <div class="detail-value">${data.favicon_hash || 'N/A'}</div>
-                        <div class="detail-label mt-sm">Status Code</div>
-                        <div class="detail-value"><span class="tag ${data.status_code >= 200 && data.status_code < 300 ? 'tag-tech' : 'tag-waf'}">${data.status_code || 'N/A'}</span></div>
-                        <div class="detail-label mt-sm">JARM Hash</div>
-                        <div class="detail-value" style="font-size: 0.8rem;">${data.jarm_hash || 'N/A'}</div>
-                        ${data.response_headers ? `
-                            <div class="detail-label mt-sm">Response Headers</div>
-                            <div class="detail-value" style="font-size: 0.75rem; max-height: 150px; overflow-y: auto;">
-                                ${Object.entries(data.response_headers).map(([k, v]) => `<div><b>${k}:</b> ${v}</div>`).join('')}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-                }
-            }
-        });
-
-        // Fallback for flat schema (e.g. results inserted during the optimized engine bug)
-        if (!hasFoundResult) {
-            const data = resultData;
-            content += `
+        // --- Helper to render sections ---
+        const renderSection = (title, icon, items) => {
+            if (!items || items.length === 0) return '';
+            return `
                 <div class="detail-section">
-                    <h4 style="margin: 0 0 0.5rem 0; color: var(--text-accent);">Service Data</h4>
-                    <div class="detail-label">URL</div>
-                    <div class="detail-value"><a href="${data.request}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.request || 'N/A'}</a></div>
-                    <div class="detail-label mt-sm">Title</div>
-                    <div class="detail-value">${data.title || 'N/A'}</div>
-                    <div class="detail-label mt-sm">IP / Port</div>
-                    <div class="detail-value"><a href="http://${data.ip}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.ip || 'N/A'}</a>:${data.port || 'N/A'}</div>
-                    <div class="detail-label mt-sm">Domain</div>
-                    <div class="detail-value"><a href="https://${data.domain}" target="_blank" style="color: var(--primary); text-decoration: underline;">${data.domain || 'N/A'}</a></div>
-                    <div class="detail-label mt-sm">Technologies</div>
-                    <div>${(data.technologies || []).map(t => `<span class="tag tag-tech">${t}</span>`).join(' ') || 'None'}</div>
-                    ${data.waf ? `<div class="detail-label mt-sm">WAF</div><div><span class="tag tag-waf">${data.waf}</span></div>` : ''}
-                    <div class="detail-label mt-sm">Favicon Hash</div>
-                    <div class="detail-value">${data.favicon_hash || 'N/A'}</div>
-                    <div class="detail-label mt-sm">Status Code</div>
-                    <div class="detail-value"><span class="tag ${data.status_code >= 200 && data.status_code < 300 ? 'tag-tech' : 'tag-waf'}">${data.status_code || 'N/A'}</span></div>
-                </div>
-            `;
-        }
-
-        // Add Fuzzing Results section if data exists
-        if (resultData.fuzz_results && resultData.fuzz_results.length > 0) {
-            content += `
-                <div class="detail-section">
-                    <h4 style="margin: 0 0 0.5rem 0; color: var(--success);">🎯 Fuzzing Discovery</h4>
-                    <div style="font-size: 0.85rem;">
-                        ${resultData.fuzz_results.map(f => `
-                            <div style="margin-bottom: 0.25rem;">
-                                <span class="tag tag-tech" style="padding: 1px 4px; font-size: 0.7rem;">${f.status}</span>
-                                <a href="${f.url}" target="_blank" style="color: var(--primary);">${f.url}</a>
+                    <h4 style="display: flex; align-items: center; gap: 0.5rem; margin: 0 0 1rem 0; color: var(--primary);">
+                        <span>${icon}</span> ${title}
+                    </h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                        ${items.map(i => `
+                            <div>
+                                <div class="detail-label">${i.label}</div>
+                                <div class="detail-value">${i.value}</div>
                             </div>
                         `).join('')}
                     </div>
                 </div>
             `;
+        };
+
+        const renderCodeBlock = (title, icon, code) => {
+            if (!code || code.includes('[!] Error') || code === 'N/A') return '';
+            return `
+                <div class="detail-section">
+                    <h4 style="display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.5rem 0; color: var(--text-accent);">
+                        <span>${icon}</span> ${title}
+                    </h4>
+                    <pre style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 4px; font-size: 0.75rem; max-height: 250px; overflow-y: auto; color: #a1a1aa; border: 1px solid var(--glass-border); line-height: 1.4;">${escapeHtml(code)}</pre>
+                </div>
+            `;
+        };
+
+        // --- Data Extraction ---
+        // Asset Info (Whois, ASN, etc.)
+        const whois = resultData.whois || {};
+        const assetItems = [
+            { label: 'IP Address', value: resultData.ip || 'N/A' },
+            { label: 'Port', value: resultData.port || 'N/A' },
+            { label: 'ASN', value: resultData.asn || 'N/A' },
+            { label: 'Organization', value: resultData.org || whois.organization || 'N/A' },
+            { label: 'Country', value: resultData.country || 'N/A' },
+            { label: 'Netblock', value: whois.netblock || 'N/A' },
+            { label: 'Owner', value: whois.owner || 'N/A' }
+        ];
+
+        // Web Info
+        const webItems = [
+            { label: 'Domain (SSL CN)', value: resultData.domain || 'N/A' },
+            { label: 'Page Title', value: resultData.title || 'No Title' },
+            { label: 'Status Code', value: resultData.status_code || '---' },
+            { label: 'Request URL', value: `<a href="${resultData.request}" target="_blank" style="color: var(--primary);">${resultData.request || 'N/A'}</a>` }
+        ];
+
+        // DNS Info
+        const dns = resultData.dns || {};
+        const dnsItems = [
+            { label: 'PTR Record', value: dns.ptr || 'N/A' }
+        ];
+
+        // Exposure Indicators
+        const exposureHtml = (resultData.exposures || []).length > 0 ? `
+            <div class="detail-section" style="border-left: 4px solid var(--danger); background: rgba(239, 68, 68, 0.05);">
+                <h4 style="margin: 0 0 0.5rem 0; color: var(--danger);">🚨 Critical Exposures Detected</h4>
+                <ul style="margin: 0; padding-left: 1.2rem; color: var(--text-primary);">
+                    ${resultData.exposures.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                </ul>
+            </div>
+        ` : '';
+
+        // --- Build Final Content ---
+        content += exposureHtml;
+        content += renderSection('Asset Intelligence', '🌍', assetItems);
+        content += renderSection('Web Service Details', '🌐', webItems);
+        content += renderSection('DNS Intelligence', '🧬', dnsItems);
+
+        if (resultData.technologies && resultData.technologies.length > 0) {
+            content += `
+                <div class="detail-section">
+                    <div class="detail-label">Detected Technology Stack</div>
+                    <div style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                        ${resultData.technologies.map(t => `<span class="tag tag-tech">${escapeHtml(t)}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        content += renderCodeBlock('Nmap Service Scan', '🛰️', resultData.nmap?.raw);
+        content += renderCodeBlock('SSL/TLS Detail', '🔐', resultData.ssl_raw);
+        content += renderCodeBlock('Whois Raw Output', '📋', resultData.whois?.raw);
+        content += renderCodeBlock('DNS Output (Nslookup)', '🔍', resultData.dns?.nslookup);
+
+        // Add Fuzzing Results section if data exists
+        if (resultData.fuzz_results && resultData.fuzz_results.length > 0) {
+            content += `
+                    <div class="detail-section">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--success);">🎯 Fuzzing Discovery</h4>
+                        <div style="font-size: 0.85rem;">
+                            ${resultData.fuzz_results.map(f => `
+                                <div style="margin-bottom: 0.25rem;">
+                                    <span class="tag tag-tech" style="padding: 1px 4px; font-size: 0.7rem;">${f.status}</span>
+                                    <a href="${f.url}" target="_blank" style="color: var(--primary);">${f.url}</a>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
         }
 
         if (!content) content = '<div style="text-align: center; color: var(--text-muted);">No response data</div>';
@@ -612,6 +688,21 @@
             alert('Export complete!');
         } catch (e) {
             alert('Export failed: ' + e);
+        }
+    }
+
+    function toggleAutoRefresh(checkbox) {
+        if (checkbox.checked) {
+            refreshInterval = setInterval(() => {
+                // Only auto-refresh if we are on the first page and no specific search query or if it's explicitly allowed
+                const q = document.getElementById('search-input').value;
+                if (!q && currentPage === 1) {
+                    performSearch(1);
+                }
+            }, 5000);
+        } else {
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = null;
         }
     }
 

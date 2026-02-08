@@ -10,6 +10,15 @@
         <p class="text-muted" style="font-size: 1.1rem;">
             All websites and subdomains found across all your scans
         </p>
+
+        <!-- Auto-Scan Status -->
+        <div id="job-status"
+            style="margin-top: 1rem; display: inline-block; background: rgba(59, 130, 246, 0.1); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid rgba(59, 130, 246, 0.3); font-size: 0.9rem;">
+            <span class="spinner"
+                style="width: 12px; height: 12px; border-width: 2px; vertical-align: middle; margin-right: 0.5rem;"></span>
+            Auto-Scanning: <span id="job-running" style="font-weight: bold; color: var(--primary);">0</span> running,
+            <span id="job-queued" style="font-weight: bold;">0</span> pending
+        </div>
     </div>
 
     <!-- Controls Bar -->
@@ -247,7 +256,7 @@
     .modal {
         display: none;
         position: fixed;
-        z-index: 1000;
+        z-index: 9999;
         left: 0;
         top: 0;
         width: 100%;
@@ -257,9 +266,9 @@
     }
 
     .modal.active {
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
 
     .modal-content {
@@ -270,6 +279,7 @@
         max-height: 90vh;
         overflow-y: auto;
         width: 90%;
+        max-width: 900px;
     }
 
     .modal-header {
@@ -344,7 +354,31 @@
     document.addEventListener('DOMContentLoaded', () => {
         loadSubdomains(1);
         setupSearchListener();
+        pollJobStatus();
+        setInterval(pollJobStatus, 3000); // Poll every 3s
     });
+
+    // Poll Job Status
+    async function pollJobStatus() {
+        try {
+            const res = await fetch('/jobs/status');
+            const data = await res.json();
+
+            document.getElementById('job-running').innerText = data.running;
+            document.getElementById('job-queued').innerText = data.queued;
+
+            const statusDiv = document.getElementById('job-status');
+            if (data.running === 0 && data.queued === 0) {
+                statusDiv.style.opacity = '0.5';
+                statusDiv.querySelector('.spinner').style.display = 'none';
+            } else {
+                statusDiv.style.opacity = '1';
+                statusDiv.querySelector('.spinner').style.display = 'inline-block';
+            }
+        } catch (e) {
+            console.error("Status poll error", e);
+        }
+    }
 
     // Setup search listener with debounce
     function setupSearchListener() {
@@ -506,6 +540,27 @@
         }
     }
 
+    // Start Fuzzing
+    async function startFuzzing(domain) {
+        if (!confirm(`Start directory fuzzing for ${domain}?`)) return;
+
+        try {
+            // Use 'auto' as scan_id for now or currentScanId if valid
+            const scanId = currentScanId === 'all' ? 'manual' : currentScanId;
+            const res = await fetch(`/fuzzing/start/${scanId}/${domain}`, { method: 'POST' });
+            const data = await res.json();
+
+            if (data.success) {
+                alert(`✅ Fuzzing started for ${domain}`);
+                closeDetailModal();
+            } else {
+                alert('❌ Failed: ' + data.error);
+            }
+        } catch (e) {
+            alert('❌ Request Failed');
+        }
+    }
+
     // Render subdomain details in modal
     function renderSubdomainDetails(details) {
         const modalBody = document.getElementById('modal-detail-body');
@@ -544,9 +599,12 @@
                     </div>
                 ` : ''}
 
-                <div style="margin-top: 1.5rem; text-align: center;">
+                <div style="margin-top: 1.5rem; text-align: center; display: flex; gap: 0.5rem; justify-content: center;">
                     <button onclick="window.open('https://${details.domain}', '_blank')" class="btn btn-primary">
                         Visit Website →
+                    </button>
+                    <button onclick="startFuzzing('${details.domain}')" class="btn btn-outline">
+                        🔍 Directory Fuzz
                     </button>
                 </div>
             </div>

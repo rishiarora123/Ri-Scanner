@@ -8,9 +8,12 @@ from datetime import datetime
 class SubdomainManager:
     """Manages subdomain storage and retrieval using MongoDB."""
     
-    def __init__(self):
-        # Base dir kept only if needed for legacy compatibility, but logic is removed
-        pass
+    def __init__(self, db=None):
+        self.db = db  # Store MongoDB database reference
+    
+    def set_db(self, db):
+        """Set the MongoDB database instance (called after app initialization)."""
+        self.db = db
     
     def save_subdomains(self, scan_id: str, subdomains: List[Any], source: str = "recon", asn_scan_id: str = None) -> bool:
         """
@@ -26,9 +29,8 @@ class SubdomainManager:
             timestamp = datetime.now().isoformat()
             source_type = "asn" if source == "asn" or asn_scan_id else "recon"
             
-            from flask import current_app
-            if not hasattr(current_app, 'db') or current_app.db is None:
-                print("MongoDB not instantiated, cannot save subdomains")
+            if self.db is None:
+                print("[!] MongoDB not available in SubdomainManager")
                 return False
 
             # Bulk operations would be better for performance, but keeping it simple/safe for now
@@ -67,16 +69,19 @@ class SubdomainManager:
                 update_doc["$set"]["last_checked"] = timestamp
                 
                 # Upsert individual subdomain document
-                current_app.db.subdomains.update_one(
+                self.db.subdomains.update_one(
                     {"scan_id": scan_id, "domain": domain_val},
                     update_doc,
                     upsert=True
                 )
                 ops_count += 1
             
+            print(f"[*] Saved {ops_count} subdomain records to MongoDB")
             return True
         except Exception as e:
-            print(f"MongoDB subdomain save error: {e}")
+            print(f"[!] MongoDB subdomain save error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def get_subdomains(self, scan_id: str, filters: Optional[Dict] = None, page: int = 1, per_page: int = 50) -> Dict[str, Any]:
@@ -90,8 +95,7 @@ class SubdomainManager:
             per_page: Items per page
         """
         try:
-            from flask import current_app
-            if not hasattr(current_app, 'db') or current_app.db is None:
+            if self.db is None:
                 return {"subdomains": [], "total": 0, "page": page, "pages": 0}
             
             query = {}
@@ -130,8 +134,8 @@ class SubdomainManager:
             # Pagination
             skip = (page - 1) * per_page
             
-            total = current_app.db.subdomains.count_documents(query)
-            cursor = current_app.db.subdomains.find(query).sort(sort_order).skip(skip).limit(per_page)
+            total = self.db.subdomains.count_documents(query)
+            cursor = self.db.subdomains.find(query).sort(sort_order).skip(skip).limit(per_page)
             
             results = list(cursor)
             
@@ -162,12 +166,11 @@ class SubdomainManager:
     def save_domain_details(self, scan_id: str, domain: str, details: Dict) -> bool:
         """Save detailed information about a domain into the subdomain document."""
         try:
-            from flask import current_app
-            if not hasattr(current_app, 'db') or current_app.db is None:
+            if self.db is None:
                 return False
                 
             # Update the existing subdomain document with details
-            current_app.db.subdomains.update_one(
+            self.db.subdomains.update_one(
                 {"scan_id": scan_id, "domain": domain},
                 {"$set": details, "$currentDate": {"last_updated": True}},
                 upsert=True 
@@ -180,15 +183,14 @@ class SubdomainManager:
     def get_domain_details(self, scan_id: str, domain: str) -> Optional[Dict]:
         """Get details from MongoDB."""
         try:
-            from flask import current_app
-            if not hasattr(current_app, 'db') or current_app.db is None:
+            if self.db is None:
                 return None
             
             # Find in subdomains collection
-            doc = current_app.db.subdomains.find_one({"scan_id": scan_id, "domain": domain})
+            doc = self.db.subdomains.find_one({"scan_id": scan_id, "domain": domain})
             if not doc and scan_id == "all":
                  # Fallback: find any instance of this domain
-                 doc = current_app.db.subdomains.find_one({"domain": domain})
+                 doc = self.db.subdomains.find_one({"domain": domain})
             
             if doc and '_id' in doc:
                 del doc['_id']

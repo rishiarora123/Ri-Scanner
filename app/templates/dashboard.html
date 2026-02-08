@@ -14,39 +14,29 @@
         <!-- Masscan Progress -->
         <div class="progress-container">
             <div class="progress-header">
-                <span>Masscan</span>
+                <span style="display: flex; align-items: center; gap: 0.5rem;">📡 Masscan</span>
                 <span id="masscan-txt" style="font-weight: 600;">0%</span>
             </div>
             <div class="progress-bar">
                 <div id="masscan-bar" class="progress-fill" style="width: 0%;"></div>
             </div>
             <div class="flex-between mt-sm" style="font-size: 0.75rem; color: var(--text-muted);">
-                <span id="masscan-ranges">Ranges: 0 / 0</span>
+                <span id="masscan-ranges">Chunks: 0 / 0</span>
                 <span id="masscan-eta">ETA: --</span>
             </div>
         </div>
 
-        <!-- Active Chunks Section -->
-        <div style="margin: 1rem 0;">
-            <div class="flex-between" style="margin-bottom: 0.5rem;">
-                <span style="font-size: 0.85rem; font-weight: 600;">Active Chunks</span>
-                <span id="active-chunk-count" style="font-size: 0.75rem; color: var(--text-muted);">0 running</span>
-            </div>
-            <div id="chunk-list" style="max-height: 250px; overflow-y: auto;">
-                <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.85rem;">
-                    No active chunks
-                </div>
-            </div>
-        </div>
-
-        <!-- Extraction Progress -->
+        <!-- Naabu Progress -->
         <div class="progress-container">
             <div class="progress-header">
-                <span>Extraction</span>
-                <span id="extract-txt">0%</span>
+                <span style="display: flex; align-items: center; gap: 0.5rem;">🛰️ Naabu</span>
+                <span id="naabu-txt" style="font-weight: 600;">0%</span>
             </div>
             <div class="progress-bar">
-                <div id="extract-bar" class="progress-fill blue" style="width: 0%;"></div>
+                <div id="naabu-bar" class="progress-fill blue" style="width: 0%;"></div>
+            </div>
+            <div class="flex-between mt-sm" style="font-size: 0.75rem; color: var(--text-muted);">
+                <span id="naabu-status">Waiting...</span>
             </div>
         </div>
 
@@ -63,7 +53,7 @@
         </div>
 
         <!-- Stop Button -->
-        <button onclick="showStopModal()" class="btn btn-danger btn-full mt-lg">Stop Scan</button>
+        <button onclick="showStopModal()" class="btn btn-danger btn-full mt-md">🛑 Stop All</button>
     </aside>
 
     <!-- Main Content - Logs -->
@@ -189,7 +179,7 @@
             badge.innerText = data.phase;
             badge.className = 'phase-badge';
             if (data.phase.includes('Masscan')) badge.classList.add('scanning');
-            else if (data.phase.includes('Extraction')) badge.classList.add('extracting');
+            else if (data.phase.includes('Naabu')) badge.classList.add('extracting');
             else if (data.phase === 'Idle') badge.classList.add('idle');
 
             // Masscan progress
@@ -197,19 +187,26 @@
             document.getElementById('masscan-bar').style.width = `${mPct}%`;
             document.getElementById('masscan-txt').innerText = `${Math.round(mPct)}%`;
 
-            // Ranges & ETA
+            // Masscan Chunks & ETA
             document.getElementById('masscan-ranges').innerText =
-                `Ranges: ${data.masscan_ranges_done || 0} / ${data.masscan_ranges_total || 0}`;
+                `Chunks: ${data.masscan_ranges_done || 0} / ${data.masscan_ranges_total || 0}`;
             document.getElementById('masscan-eta').innerText =
                 `ETA: ${data.estimated_remaining || '--'}`;
 
-            // Active Chunks - Filter only running chunks
-            renderActiveChunks(data.masscan_chunks_status || []);
+            // Naabu progress
+            const nPct = data.naabu_total > 0 ? (data.naabu_progress / data.naabu_total * 100) : 0;
+            document.getElementById('naabu-bar').style.width = `${nPct}%`;
+            document.getElementById('naabu-txt').innerText = `${Math.round(nPct)}%`;
 
-            // Extraction progress
-            const ePct = data.extraction_total > 0 ? (data.extraction_progress / data.extraction_total * 100) : 0;
-            document.getElementById('extract-bar').style.width = `${ePct}%`;
-            document.getElementById('extract-txt').innerText = `${Math.round(ePct)}%`;
+            // Naabu status
+            const nStatus = document.getElementById('naabu-status');
+            if (nPct > 0 && nPct < 100) {
+                nStatus.innerText = `Scanning: ${data.naabu_progress} / ${data.naabu_total} chunks`;
+            } else if (nPct === 100) {
+                nStatus.innerText = "Completed";
+            } else {
+                nStatus.innerText = data.phase.includes('Naabu') ? "Running..." : "Waiting...";
+            }
 
             // Stats
             document.getElementById('found-count').innerText = data.found_count || 0;
@@ -218,33 +215,6 @@
         } catch (e) {
             console.error('Status update error:', e);
         }
-    }
-
-    function renderActiveChunks(chunks) {
-        // Filter only running chunks
-        const activeChunks = chunks.filter(c => c.status === 'running');
-
-        document.getElementById('active-chunk-count').innerText = `${activeChunks.length} active`;
-
-        const container = document.getElementById('chunk-list');
-
-        if (activeChunks.length === 0) {
-            const hasCompleted = chunks.some(c => c.status === 'completed');
-            container.innerHTML = `
-            <div style="text-align: center; color: var(--text-muted); padding: 1rem; font-size: 0.85rem; grid-column: 1 / -1;">
-                ${hasCompleted ? 'All chunks completed!' : 'Waiting for chunks...'}
-            </div>
-        `;
-            return;
-        }
-
-        container.innerHTML = activeChunks.map(chunk => {
-            return `
-            <div class="chunk-cube running">
-                <div class="chunk-tooltip">Chunk #${chunk.id + 1}</div>
-            </div>
-        `;
-        }).join('');
     }
 
     function toggleChunk(id) {
@@ -273,6 +243,32 @@
                 lastLogCount = logs.length;
             }
         } catch (e) { }
+    }
+
+    // Modal functions
+    function showStopModal() {
+        document.getElementById('stop-modal').classList.add('active');
+        document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('stop-modal').classList.remove('active');
+        document.getElementById('modal-overlay').classList.remove('active');
+    }
+
+    async function confirmStop(keepData) {
+        closeModal();
+        document.getElementById('phase-badge').innerText = 'Terminating...';
+
+        try {
+            await fetch('/stop_scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ save: keepData })
+            });
+        } catch (e) {
+            console.error('Stop error:', e);
+        }
     }
 
     // Modal functions

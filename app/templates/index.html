@@ -12,19 +12,33 @@
     <!-- Full Recon Card -->
     <div class="glass card">
         <div class="card-header">
-            <h2 style="color: #60a5fa;">1. Complete Website Scan</h2>
-            <p class="card-description">Automatically finds all related websites and servers. <strong>Recommended for
-                    most users.</strong></p>
+            <h2 style="color: #60a5fa;">1. Deep Infra Analysis</h2>
+            <p class="card-description">Discovers subdomains, extracts ASNs, and scans infrastructure for open services.
+            </p>
             <small style="display: block; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">Technical:
-                Subdomain enumeration → Port scanning → Technology detection</small>
+                Subdomains (Chaos/Subfinder) → ASN Extraction → Port Scanning (Masscan/Naabu)</small>
         </div>
         <form id="form-recon" onsubmit="startScan(event, 'recon', this)">
             <div class="form-group">
-                <label class="form-label">Website Domain <span class="help-icon"
+                <label class="form-label">Target Domain <span class="help-icon"
                         title="Enter any website domain without http:// or www">ℹ️</span></label>
-                <input type="text" name="domain" class="form-input" placeholder="example.com (without www or http://)"
-                    required>
-                <small class="form-help">Example: google.com, facebook.com, github.com</small>
+                <input type="text" name="domain" class="form-input" placeholder="example.com">
+                <small class="form-help">Example: google.com, facebook.com</small>
+            </div>
+
+            <div
+                style="text-align: center; margin: 1rem 0; color: var(--text-muted); font-weight: 600; position: relative;">
+                <span style="background: var(--glass-bg); padding: 0 1rem; position: relative; z-index: 1;">OR</span>
+                <div
+                    style="position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid var(--glass-border); z-index: 0;">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Upload IP Range File <span class="help-icon"
+                        title="Directly scan these IP ranges/CIDRs. Discovery will be skipped.">ℹ️</span></label>
+                <input type="file" name="ip_file" class="form-input">
+                <small class="form-help">Format: .txt (one range per line)</small>
             </div>
 
             <div class="form-group">
@@ -35,6 +49,52 @@
                     <option value="fast">⚡ Fast</option>
                     <option value="insane">🚀 Insane (Max Rate)</option>
                 </select>
+            </div>
+
+            <!-- Tool Selection -->
+            <div class="form-group">
+                <label class="form-label">
+                    Discovery Tools
+                    <span class="help-icon" title="Select which tools to use for subdomain discovery">ℹ️</span>
+                </label>
+                <div id="tool-selection-panel"
+                    style="margin-top: 0.75rem; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: var(--radius-md); border: 1px solid var(--glass-border);">
+                    <div
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem;">
+                        <label class="tool-checkbox"><input type="checkbox" name="tools" value="subfinder" checked>
+                            Subfinder</label>
+                        <label class="tool-checkbox"><input type="checkbox" name="tools" value="assetfinder" checked>
+                            Assetfinder</label>
+                        <label class="tool-checkbox"><input type="checkbox" name="tools" value="chaos" checked>
+                            Chaos</label>
+                    </div>
+                    <small style="display: block; margin-top: 0.75rem; color: var(--text-muted);">Highly optimized for
+                        deep infrastructure enumeration.</small>
+                </div>
+                <input type="hidden" id="selected-tools" name="selected_tools" value="">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Masscan Rate (packets/sec) <span class="help-icon"
+                        title="Packets per second for masscan tool">ℹ️</span></label>
+                <input type="number" name="masscan_rate" class="form-input" value="10000" min="100" max="100000"
+                    placeholder="Default: 10000">
+                <small class="form-help">Controls scanning intensity (100-100000)</small>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Ports to Scan <span class="help-icon"
+                        title="Comma-separated ports. 80,443 use standard engine. 27017 uses specialized Netcat check.">ℹ️</span></label>
+                <input type="text" name="ports" class="form-input" value="80, 443">
+                <small class="form-help">Default: 80, 443. Example: 80, 443, 27017</small>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Scan Threads <span class="help-icon"
+                        title="Number of parallel threads/chunks for Masscan and Naabu. Higher = Faster but uses more CPU.">ℹ️</span></label>
+                <input type="number" name="threads" class="form-input" value="10" min="1" max="100"
+                    placeholder="Recommended: 10">
+                <small class="form-help">Parallel execution threads (1-100)</small>
             </div>
 
             <button type="submit" class="btn btn-secondary btn-full">
@@ -44,65 +104,19 @@
         </form>
     </div>
 
-    <!-- Masscan Result Card -->
-    <div class="glass card">
-        <div class="card-header">
-            <h2 style="color: #34d399;">2. From Masscan Result</h2>
-            <p class="card-description">Upload an existing masscan result file (-oH format) to extract domains.</p>
-        </div>
-        <form id="form-masscan" onsubmit="startScan(event, 'masscan_file', this)">
-            <div class="form-group">
-                <label class="form-label">Masscan Result File</label>
-                <input type="file" name="file" class="form-input" required>
-            </div>
-
-            <button type="submit" class="btn btn-success btn-full mt-lg">
-                <span class="btn-text">Process Results</span>
-                <span class="spinner hidden"></span>
-            </button>
-        </form>
-    </div>
-
-    <!-- IP List Card -->
-    <div class="glass card">
-        <div class="card-header">
-            <h2 style="color: #fbbf24;">3. From IP List</h2>
-            <p class="card-description">Upload a list of IP ranges or CIDRs. Will run Masscan then Extract.</p>
-        </div>
-        <form id="form-ip" onsubmit="startScan(event, 'ip_file', this)">
-            <div class="form-group">
-                <label class="form-label">IP Range File</label>
-                <input type="file" name="file" class="form-input" required>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Scan Speed</label>
-                <select name="scan_speed" class="form-input">
-                    <option value="slow">🐢 Slow & Stealthy</option>
-                    <option value="balanced" selected>⚖️ Balanced (Recommended)</option>
-                    <option value="fast">⚡ Fast</option>
-                    <option value="insane">🚀 Insane (Max Rate)</option>
-                </select>
-            </div>
-
-            <button type="submit" class="btn btn-warning btn-full">
-                <span class="btn-text">Start Scan</span>
-                <span class="spinner hidden"></span>
-            </button>
-        </form>
-    </div>
-
     <!-- ASN List Card -->
     <div class="glass card">
         <div class="card-header">
-            <h2 style="color: #a855f7;">4. From ASN List</h2>
-            <p class="card-description">Input a list of ASNs (e.g. AS15169). Will resolve to IPs then scan.</p>
+            <h2 style="color: #a855f7;">2. From ASN List</h2>
+            <p class="card-description">Input a list of ASNs (e.g. AS15169). Will resolve them to IP ranges and scan.
+            </p>
         </div>
         <form id="form-asn" onsubmit="startScan(event, 'asn_list', this)">
             <div class="form-group">
-                <label class="form-label">ASN List (Comma or Space separated)</label>
+                <label class="form-label">ASN List</label>
                 <textarea name="asns" class="form-input" placeholder="AS15169, AS16509"
                     style="height: 100px; resize: vertical;" required></textarea>
+                <small class="form-help">Comma or space separated ASNs</small>
             </div>
 
             <div class="form-group">
@@ -113,6 +127,24 @@
                     <option value="fast">⚡ Fast</option>
                     <option value="insane">🚀 Insane (Max Rate)</option>
                 </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Masscan Rate (packets/sec)</label>
+                <input type="number" name="masscan_rate" class="form-input" value="10000" min="100" max="100000">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Ports to Scan</label>
+                <input type="text" name="ports" class="form-input" value="80, 443">
+                <small class="form-help">Example: 80, 443, 27017</small>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Scan Threads <span class="help-icon"
+                        title="Number of parallel threads/chunks for Masscan and Naabu. Higher = Faster but uses more CPU.">ℹ️</span></label>
+                <input type="number" name="threads" class="form-input" value="10" min="1" max="100">
+                <small class="form-help">Parallel execution threads (1-100)</small>
             </div>
 
             <button type="submit" class="btn btn-full" style="background: var(--accent); color: white;">
@@ -123,59 +155,86 @@
     </div>
 </div>
 
-<!-- Recon Tools Overview Section -->
+<!-- Analysis Workflow Section -->
 <div class="glass card mt-lg" style="margin-top: 2rem;">
     <div class="card-header text-center">
-        <h2 style="color: var(--primary);">🧰 Recon Tools Available</h2>
+        <h2 style="color: var(--primary);">🛠️ How Deep Infra Analysis Works</h2>
         <p class="card-description">
-            40+ reconnaissance tools integrated for comprehensive scanning.
-            <a href="/settings" style="color: var(--primary);">Configure API keys & view status →</a>
+            A high-speed, systematic approach to mapping an organization's perimeter.
         </p>
     </div>
 
     <div class="grid-3" style="padding: 1rem;">
         <div class="stat-card">
             <div class="stat-value" style="font-size: 1.5rem;">🔍</div>
-            <div class="stat-label">Subdomain Tools</div>
-            <div class="text-muted" style="font-size: 0.8rem;">Subfinder, Amass, Chaos, DNSx, +9 more</div>
+            <div class="stat-label">1. Discovery</div>
+            <div class="text-muted" style="font-size: 0.8rem;">Enumerates subdomains using Chaos, Subfinder, and
+                Assetfinder for maximum coverage.</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">🛰️</div>
-            <div class="stat-label">Search Engines</div>
-            <div class="text-muted" style="font-size: 0.8rem;">Shodan, Censys, ZoomEye, FOFA, SecurityTrails</div>
+            <div class="stat-value" style="font-size: 1.5rem;">🌏</div>
+            <div class="stat-label">2. IP Resolution</div>
+            <div class="text-muted" style="font-size: 0.8rem;">Maps subdomains to IPs, identifies unique ASNs, and
+                resolves them to full IP prefixes.</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">🌐</div>
-            <div class="stat-label">CT Logs</div>
-            <div class="text-muted" style="font-size: 0.8rem;">crt.sh, Certspotter, Bufferover</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">🌍</div>
-            <div class="stat-label">Origin IP Discovery</div>
-            <div class="text-muted" style="font-size: 0.8rem;">CloudFlair, CloudFail, DNSRecon</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">🔗</div>
-            <div class="stat-label">URL Discovery</div>
-            <div class="text-muted" style="font-size: 0.8rem;">Waybackurls, GAU, Katana, Hakrawler</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">🧰</div>
-            <div class="stat-label">Frameworks</div>
-            <div class="text-muted" style="font-size: 0.8rem;">Recon-ng, Osmedeus, Sn1per, Aquatone</div>
+            <div class="stat-value" style="font-size: 1.5rem;">📡</div>
+            <div class="stat-label">3. Infra Scan</div>
+            <div class="text-muted" style="font-size: 0.8rem;">Runs Masscan and Naabu in parallel to identify active
+                services on ports 80 and 443.</div>
         </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<style>
+    .tool-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: background var(--transition-fast);
+        font-size: 0.85rem;
+    }
+
+    .tool-checkbox:hover {
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .tool-checkbox input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+    }
+</style>
 <script>
+    // Tool Selection Functions
+    function getSelectedTools() {
+        const selected = [];
+        document.querySelectorAll('#tool-selection-panel input[type="checkbox"]:checked').forEach(cb => {
+            selected.push(cb.value);
+        });
+        return selected;
+    }
+
     async function startScan(e, mode, form) {
         e.preventDefault();
         const formData = new FormData(form);
         formData.append('mode', mode);
 
-        const btn = form.querySelector('button');
+        // Collect selected tools for recon mode
+        if (mode === 'recon') {
+            const selectedTools = getSelectedTools();
+            if (selectedTools.length > 0) {
+                formData.set('selected_tools', selectedTools.join(','));
+            }
+        }
+
+        const btn = form.querySelector('button[type="submit"]');
         const btnText = btn.querySelector('.btn-text');
         const spinner = btn.querySelector('.spinner');
         const originalText = btnText.innerText;
