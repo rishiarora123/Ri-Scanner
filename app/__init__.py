@@ -41,6 +41,14 @@ def create_app():
         manager = get_subdomain_manager()
         manager.set_db(app.db)
         print("✓ SubdomainManager initialized with MongoDB")
+
+        from .core.job_manager import job_manager
+        job_manager.set_db(app.db)
+        print("✓ JobManager initialized with MongoDB")
+
+        from .core.fuzzing_manager import fuzzing_manager
+        fuzzing_manager.set_db(app.db)
+        print("✓ FuzzingManager initialized with MongoDB")
     
     # Register Blueprints
     from .routes import main_bp

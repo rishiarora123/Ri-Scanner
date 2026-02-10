@@ -1,36 +1,44 @@
 import re
 import os
 import json
-import urllib.request
-import threading
 import ssl
 import socket
+import time
 import requests
 from bs4 import BeautifulSoup
 
+# ── IP Info Cache ─────────────────────────────────────────────────
+_ip_info_cache = {}
+_ip_info_cache_ttl = 300  # 5 minutes
+_ip_api_last_call = 0
+_IP_API_MIN_INTERVAL = 1.4  # ~43 req/min (free tier limit is 45/min)
+
+
 def is_valid_domain(common_name):
-    # Regular expression pattern for a valid domain name
     domain_pattern = r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     return re.match(domain_pattern, common_name) is not None
+
 
 def check_and_create_files(*file_paths):
     for file_path in file_paths:
         if not os.path.exists(file_path):
-            # If the file doesn't exist, create it
             with open(file_path, "w") as file:
                 pass
-            # print(f'File "{file_path}" has been created.')
 
-def log_to_server(message):
-    """Sends a log message to the server for the dashboard verbose view."""
-    def _send():
-        try:
-            data = json.dumps({"message": message}).encode('utf-8')
-            req = urllib.request.Request("http://127.0.0.1:5000/log_update", data=data, headers={'Content-Type': 'application/json'})
-            urllib.request.urlopen(req, timeout=1)
-        except Exception:
-            pass
-    threading.Thread(target=_send, daemon=True).start()
+
+# ── Reusable Session ──────────────────────────────────────────────
+_session = None
+
+def _get_session():
+    """Reuse a requests.Session for connection pooling."""
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        _session.headers.update({"User-Agent": "Mozilla/5.0 (Ri-Scanner Pro)"})
+    return _session
+
+
+# ── ASN Resolution ────────────────────────────────────────────────
 
 def resolve_asn_to_ips(asn):
     """
@@ -70,9 +78,9 @@ def resolve_asn_to_ips(asn):
 def _try_bgpview(asn_num):
     """Try BGPView API"""
     try:
-        import requests
+        session = _get_session()
         url = f"https://api.bgpview.io/asn/{asn_num}/prefixes"
-        response = requests.get(url, timeout=10)
+        response = session.get(url, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
@@ -93,9 +101,9 @@ def _try_bgpview(asn_num):
 def _try_ripestat(asn_num):
     """Try RIPEstat API (more reliable, works globally)"""
     try:
-        import requests
+        session = _get_session()
         url = f"https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS{asn_num}"
-        response = requests.get(url, timeout=10)
+        response = session.get(url, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
@@ -113,39 +121,66 @@ def _try_ripestat(asn_num):
 def _try_hurricane_electric(asn_num):
     """Try Hurricane Electric BGP Toolkit (web scraping as last resort)"""
     try:
-        import requests
-        import re
-        
+        session = _get_session()
         url = f"https://bgp.he.net/AS{asn_num}#_prefixes"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=15)
+        response = session.get(url, timeout=15)
         
         if response.status_code == 200:
-            # Extract IP prefixes from HTML table
-            # Pattern matches IPv4 and IPv6 CIDR notation
             pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\b|(?:[0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}/\d{1,3}\b'
             prefixes = re.findall(pattern, response.text)
-            return list(set(prefixes[:500]))  # Limit to 500 to avoid huge lists
+            return list(set(prefixes[:500]))
     except Exception:
         pass
     return []
 
+
+# ── IP Info ───────────────────────────────────────────────────────
+
 def get_ip_info(ip):
-    """Get ASN and Organization for an IP using ip-api.com (free demo)."""
+    """Get ASN, Organization, and Country for an IP using ip-api.com (free demo).
+    Results are cached for 5 minutes. Rate-limited to ~43 req/min."""
+    global _ip_api_last_call
+    
+    # Check cache first
+    if ip in _ip_info_cache:
+        entry = _ip_info_cache[ip]
+        if time.time() - entry["ts"] < _ip_info_cache_ttl:
+            return entry["data"]
+    
+    # Rate limiting
+    now = time.time()
+    elapsed = now - _ip_api_last_call
+    if elapsed < _IP_API_MIN_INTERVAL:
+        time.sleep(_IP_API_MIN_INTERVAL - elapsed)
+    
     try:
-        import requests
-        url = f"http://ip-api.com/json/{ip}?fields=status,message,as,org"
-        response = requests.get(url, timeout=5)
+        session = _get_session()
+        url = f"http://ip-api.com/json/{ip}?fields=status,message,as,org,country"
+        response = session.get(url, timeout=5)
+        _ip_api_last_call = time.time()
+        
         if response.status_code == 200:
             data = response.json()
             if data.get("status") == "success":
-                # Example as: "AS15169 Google LLC"
                 as_str = data.get("as", "")
                 asn = as_str.split()[0] if as_str else "Unknown"
-                return {"asn": asn, "org": data.get("org", "Unknown")}
+                result = {
+                    "asn": asn,
+                    "org": data.get("org", "Unknown"),
+                    "country": data.get("country", "Unknown")
+                }
+                _ip_info_cache[ip] = {"data": result, "ts": time.time()}
+                return result
     except Exception:
         pass
-    return {"asn": "Unknown", "org": "Unknown"}
+    
+    fallback = {"asn": "Unknown", "org": "Unknown", "country": "Unknown"}
+    _ip_info_cache[ip] = {"data": fallback, "ts": time.time()}
+    return fallback
+
+
+# ── SSL / Service Analysis ────────────────────────────────────────
+
 def get_ssl_cn(ip, port=443):
     """Extract Common Name from SSL certificate."""
     try:
@@ -164,10 +199,9 @@ def get_ssl_cn(ip, port=443):
         pass
     return None
 
+
 def analyze_service(ip, port):
     """Perform HTTP/HTTPS analysis to extract title, tech stack, and headers."""
-    import requests
-    from bs4 import BeautifulSoup
     protocol = "https" if port == 443 else "http"
     url = f"{protocol}://{ip}:{port}"
     
@@ -192,7 +226,8 @@ def analyze_service(ip, port):
             result["ssl_cn"] = cn
             result["domain"] = cn
 
-        response = requests.get(url, timeout=5, verify=False, allow_redirects=True)
+        session = _get_session()
+        response = session.get(url, timeout=5, verify=False, allow_redirects=True)
         result["status_code"] = response.status_code
         result["headers"] = dict(response.headers)
         

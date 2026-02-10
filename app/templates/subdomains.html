@@ -339,6 +339,48 @@
     .detail-tab:hover {
         color: var(--text-primary);
     }
+
+    /* Fuzzing Results */
+    .fuzz-result-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-height: 300px;
+        overflow-y: auto;
+        margin-top: 1rem;
+    }
+
+    .fuzz-result-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 4px;
+        border-left: 3px solid transparent;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.85rem;
+    }
+
+    .fuzz-result-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .fuzz-status-200 {
+        border-left-color: var(--success);
+    }
+
+    .fuzz-status-301 {
+        border-left-color: var(--secondary);
+    }
+
+    .fuzz-status-403 {
+        border-left-color: var(--danger);
+    }
+
+    .fuzz-status-500 {
+        border-left-color: var(--warning);
+    }
 </style>
 
 <script>
@@ -540,6 +582,82 @@
         }
     }
 
+    // Fuzzing State
+    let fuzzingPollInterval = null;
+
+    async function toggleFuzzing(domain) {
+        const btn = document.getElementById('fuzz-btn');
+        const isRunning = btn.getAttribute('data-running') === 'true';
+
+        if (isRunning) {
+            // Stop
+            if (!confirm(`Stop fuzzing for ${domain}?`)) return;
+            try {
+                const scanId = currentScanId === 'all' ? 'manual' : currentScanId;
+                await fetch(`/fuzzing/stop/${scanId}/${domain}`, { method: 'POST' });
+                btn.innerText = 'Start Fuzzing';
+                btn.className = 'btn btn-outline';
+                btn.setAttribute('data-running', 'false');
+                if (fuzzingPollInterval) clearInterval(fuzzingPollInterval);
+            } catch (e) { alert('Failed to stop'); }
+        } else {
+            // Start
+            const wordlist = prompt("Enter wordlist path (leave empty for default):");
+            if (wordlist === null) return;
+
+            try {
+                btn.innerText = 'Starting...';
+                const scanId = currentScanId === 'all' ? 'manual' : currentScanId;
+                const res = await fetch(`/fuzzing/start/${scanId}/${domain}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wordlist: wordlist || null })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    btn.innerText = '🛑 Stop Fuzzing';
+                    btn.className = 'btn btn-danger';
+                    btn.setAttribute('data-running', 'true');
+                    loadFuzzingResults(domain);
+                    fuzzingPollInterval = setInterval(() => loadFuzzingResults(domain), 2000);
+                } else {
+                    alert('Error: ' + data.error);
+                    btn.innerText = 'Start Fuzzing';
+                }
+            } catch (e) {
+                alert('Request failed');
+                btn.innerText = 'Start Fuzzing';
+            }
+        }
+    }
+
+    async function loadFuzzingResults(domain) {
+        const container = document.getElementById('fuzz-results-container');
+        try {
+            const scanId = currentScanId === 'all' ? 'manual' : currentScanId;
+            const res = await fetch(`/fuzzing/results/${scanId}/${domain}`);
+            const data = await res.json();
+
+            if (data.results && data.results.length > 0) {
+                container.innerHTML = data.results.map(r => `
+                    <div class="fuzz-result-item fuzz-status-${r.status_code}">
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <span style="font-weight: bold; width: 40px;">${r.status_code}</span>
+                            <a href="${r.url}" target="_blank" style="color: var(--text-primary); text-decoration: none;">/${r.path}</a>
+                        </div>
+                        <span style="color: var(--text-muted); font-size: 0.75rem;">Size: ${r.length}</span>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 1rem;">No paths found yet...</p>';
+            }
+        } catch (e) {
+            console.error("Fuzz results error", e);
+        }
+    }
+
+
     // Start Fuzzing
     async function startFuzzing(domain) {
         if (!confirm(`Start directory fuzzing for ${domain}?`)) return;
@@ -570,6 +688,7 @@
                 <button class="detail-tab active" onclick="switchTab(event, 'overview')">Overview</button>
                 <button class="detail-tab" onclick="switchTab(event, 'technologies')">Technologies</button>
                 <button class="detail-tab" onclick="switchTab(event, 'security')">Security</button>
+                <button class="detail-tab" onclick="switchTab(event, 'fuzzing')">Fuzzing</button>
             </div>
 
             <div id="tab-overview" class="tab-content">
@@ -603,9 +722,6 @@
                     <button onclick="window.open('https://${details.domain}', '_blank')" class="btn btn-primary">
                         Visit Website →
                     </button>
-                    <button onclick="startFuzzing('${details.domain}')" class="btn btn-outline">
-                        🔍 Directory Fuzz
-                    </button>
                 </div>
             </div>
 
@@ -629,7 +745,23 @@
                     </div>
                 </div>
             </div>
+
+            <div id="tab-fuzzing" class="tab-content hidden">
+                <div class="flex-between mb-md">
+                    <h3 style="margin:0;">Directory Fuzzing</h3>
+                    <button id="fuzz-btn" class="btn btn-outline" onclick="toggleFuzzing('${details.domain}')" data-running="false">
+                        Start Fuzzing
+                    </button>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 4px;">
+                    <h4 style="margin-top: 0; font-size: 0.85rem; color: var(--text-muted);">Discovered Paths</h4>
+                    <div id="fuzz-results-container" class="fuzz-result-list">
+                        <p style="text-align: center; color: var(--text-muted);">Click Start to begin directory brute-forcing...</p>
+                    </div>
+                </div>
+            </div>
         `;
+
     }
 
     // Switch tabs in modal

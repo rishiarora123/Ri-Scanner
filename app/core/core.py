@@ -4,31 +4,45 @@ import socket
 import json
 import time
 import subprocess
-import urllib.request
-import threading
 import ipaddress
 from typing import List, Dict, Any, Set, Optional
 from .recon_runner import get_recon_runner
 from .subdomain_manager import get_subdomain_manager
-from .utils import log_to_server, get_ip_info, resolve_asn_to_ips, analyze_service
+from .utils import get_ip_info, resolve_asn_to_ips, analyze_service
 from .investigator import investigate_ip
 
-def log_event(message):
-    print(message)
-    log_to_server(message)
+# ── Shared State ──────────────────────────────────────────────────
+# These are set by routes.py at import time via set_shared_state()
+_scan_status = None
+_scan_logs = None
+
+def set_shared_state(status_dict, logs_list):
+    """Called by routes.py to share the in-memory dicts instead of HTTP calls."""
+    global _scan_status, _scan_logs
+    _scan_status = status_dict
+    _scan_logs = logs_list
 
 def update_status(data):
-    """Sends status updates to the local API synchronously (but usually called in async context)."""
-    def _send():
-        try:
-            payload = json.dumps(data).encode('utf-8')
-            req = urllib.request.Request("http://127.0.0.1:5000/update_status", data=payload, headers={'Content-Type': 'application/json'})
-            urllib.request.urlopen(req, timeout=1)
-        except Exception as e:
-            # We don't log to server to avoid infinite loop if logging itself fails
-            print(f"[!] Status Update Failed: {e}")
-    # We run status updates in a thread to not block the main scanning loop
-    threading.Thread(target=_send, daemon=True).start()
+    """Update scan status via shared dict (no HTTP overhead)."""
+    if _scan_status is not None:
+        for k, v in data.items():
+            _scan_status[k] = v
+
+def log_event(message):
+    """Log to console + shared list (no HTTP overhead)."""
+    print(message)
+    if _scan_logs is not None:
+        _scan_logs.append(message)
+        if len(_scan_logs) > 500:
+            _scan_logs.pop(0)
+
+def _is_stopped(scan_context):
+    """Check if scan has been requested to stop."""
+    if scan_context and scan_context.get("stop_event"):
+        return scan_context["stop_event"].is_set()
+    return False
+
+# ── Helpers ───────────────────────────────────────────────────────
 
 async def resolve_domain_to_ip(domain: str) -> Optional[str]:
     """Resolve a domain to an IP address."""
@@ -37,6 +51,8 @@ async def resolve_domain_to_ip(domain: str) -> Optional[str]:
         return await loop.run_in_executor(None, socket.gethostbyname, domain)
     except Exception:
         return None
+
+# ── Main Scan Logic ───────────────────────────────────────────────
 
 async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=10000, scan_context=None):
     """
@@ -53,7 +69,6 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     # Shared state for parallel scanning
     discovered_findings = set()
     db_lock = asyncio.Lock()
-    from .subdomain_manager import get_subdomain_manager
     manager = get_subdomain_manager()
     db = manager.db
     m_semaphore = asyncio.Semaphore(threads)
@@ -63,9 +78,15 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     m_done_count = 0
     n_done_count = 0
     tracker_lock = asyncio.Lock()
-    investigate_semaphore = asyncio.Semaphore(20) # Max 20 concurrent deep investigations
+    investigate_semaphore = asyncio.Semaphore(20)  # Max 20 concurrent deep investigations
     
     log_event(f"[*] Initializing scan logic with parallel threads: {threads}")
+    
+    # ── STOP CHECK ──
+    if _is_stopped(scan_context):
+        log_event("[!] Scan stopped before start.")
+        update_status({"phase": "Idle"})
+        return
     
     if mode == "recon":
         log_event(f"🚀 Starting Deep Infra Analysis for Domain: {target}")
@@ -82,17 +103,30 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
             log_event("[!] No subdomains found. Using main domain for further jobs.")
             subdomains = [target]
         
+        # ── STOP CHECK ──
+        if _is_stopped(scan_context):
+            log_event("[!] Scan stopped after subdomain discovery.")
+            update_status({"phase": "Stopped"})
+            return
+        
         # 2. ASN EXTRACTION & IP RANGE RESOLUTION
         log_event("🌏 Phase 2: ASN Extraction & IP Range Discovery")
         update_status({"phase": "🌏 Extracting ASNs & IP Ranges"})
         asns = set()
         for sub in subdomains:
+            if _is_stopped(scan_context):
+                break
             ip = await resolve_domain_to_ip(sub)
             if ip:
                 info = get_ip_info(ip)
                 asn = info.get("asn")
                 if asn and asn != "Unknown":
                     asns.add(asn)
+        
+        if _is_stopped(scan_context):
+            log_event("[!] Scan stopped during ASN extraction.")
+            update_status({"phase": "Stopped"})
+            return
         
         log_event(f"[*] Found unique ASNs: {', '.join(asns)}")
         for asn in asns:
@@ -112,6 +146,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         update_status({"active_threads": threads, "phase": "🌏 Resolving ASNs"})
         asn_list = [a.strip() for a in target.split(",")]
         for asn in asn_list:
+            if _is_stopped(scan_context):
+                break
             if asn.upper().startswith("AS"): asn = asn[2:]
             ranges = resolve_asn_to_ips(asn)
             for r in ranges:
@@ -139,9 +175,15 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                                 all_ip_ranges.append(r)
                         except: continue
     
-    # Consolidated range cleanup
-    all_ip_ranges = list(set(all_ip_ranges))
-    log_event(f"[*] Initialized {len(all_ip_ranges)} total IP ranges for scanning.")
+    # ── STOP CHECK ──
+    if _is_stopped(scan_context):
+        log_event("[!] Scan stopped before scanning phase.")
+        update_status({"phase": "Stopped"})
+        return
+    
+    # Consolidated range cleanup + CIDR deduplication
+    all_ip_ranges = _deduplicate_cidrs(list(set(all_ip_ranges)))
+    log_event(f"[*] Initialized {len(all_ip_ranges)} total IP ranges for scanning (after dedup).")
     
     if not all_ip_ranges:
         log_event("[!] No IP ranges identified. Scan cannot proceed.")
@@ -185,9 +227,9 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     m_lock = asyncio.Lock()
     n_lock = asyncio.Lock()
     nc_lock = asyncio.Lock()
-    nc_semaphore_1k = asyncio.Semaphore(1000) # User requested 1k concurrency
+    nc_semaphore_200 = asyncio.Semaphore(200)  # Reduced from 1000 to 200
     discovery_lock = asyncio.Lock()
-    live_tasks = set() # Track background tasks to prevent early exit
+    live_tasks = set()  # Track background tasks to prevent early exit
     
     # Dedicated discovery file for 27017
     nc_discovery_file = os.path.join("Tmp", f"mongo_findings_{int(time.time())}.txt")
@@ -195,6 +237,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         log_event(f"[*] Persistent discovery file initialized: {nc_discovery_file}")
     
     async def process_investigation(ip, ports):
+        if _is_stopped(scan_context):
+            return
         try:
             async with investigate_semaphore:
                 # Ensure db is available (refresh from manager)
@@ -204,6 +248,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 # 1. Basic Web/SSL Analysis (fast)
                 service_results = {}
                 for p in ports:
+                    if _is_stopped(scan_context):
+                        return
                     try:
                         service_results[p] = analyze_service(ip, p)
                     except: service_results[p] = {}
@@ -270,6 +316,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
 
     async def run_nc_on_ip(ip):
         """Single NC check with 5s timeout as requested."""
+        if _is_stopped(scan_context):
+            return
         try:
             # -w 5 for 5 seconds timeout
             cmd = f"nc -vz -w 5 {ip} 27017"
@@ -300,33 +348,41 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
 
     async def run_nc_chunk(idx, chunk):
         """Run NC checks with CIDR expansion using a memory-efficient worker pattern."""
-        log_event(f"[*] Starting specialized NC scan on chunk {idx} (Streaming Expansion, 1k Concurrency)")
+        log_event(f"[*] Starting specialized NC scan on chunk {idx} (Streaming Expansion, 200 Concurrency)")
         
         queue = asyncio.Queue(maxsize=2000)
+        WORKER_COUNT = 200  # Reduced from 1000 for stability
         
         async def loader():
             for range_str in chunk:
+                if _is_stopped(scan_context):
+                    break
                 try:
                     if "/" in range_str:
                         network = ipaddress.ip_network(range_str, strict=False)
                         for ip in network:
+                            if _is_stopped(scan_context):
+                                break
                             await queue.put(str(ip))
                     else:
                         await queue.put(range_str)
                 except: continue
             # Signal workers to exit
-            for _ in range(1000): await queue.put(None)
+            for _ in range(WORKER_COUNT): await queue.put(None)
 
         async def worker():
             while True:
                 ip = await queue.get()
                 if ip is None: break
-                async with nc_semaphore_1k:
+                if _is_stopped(scan_context):
+                    queue.task_done()
+                    break
+                async with nc_semaphore_200:
                     await run_nc_on_ip(ip)
                 queue.task_done()
 
-        # Run loader and 1000 workers
-        workers = [asyncio.create_task(worker()) for _ in range(1000)]
+        # Run loader and workers
+        workers = [asyncio.create_task(worker()) for _ in range(WORKER_COUNT)]
         await loader()
         await asyncio.gather(*workers)
         return True
@@ -334,6 +390,7 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     async def run_masscan_chunk(idx, chunk):
         try:
             if not clean_ports: return True
+            if _is_stopped(scan_context): return True
             async with m_semaphore:
                 chunk_file = os.path.join("Tmp", f"masscan_chunk_{idx}_{int(time.time())}.txt")
                 output_file = chunk_file + ".json"
@@ -365,6 +422,7 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     async def run_naabu_chunk(idx, chunk):
         try:
             if not clean_ports: return True
+            if _is_stopped(scan_context): return True
             async with n_semaphore:
                 chunk_file = os.path.join("Tmp", f"naabu_chunk_{idx}_{int(time.time())}.txt")
                 output_file = chunk_file + ".txt"
@@ -390,6 +448,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         return True
 
     async def scan_chunk(idx, chunk):
+        if _is_stopped(scan_context):
+            return
         tasks = [
             run_masscan_chunk(idx, chunk),
             run_naabu_chunk(idx, chunk)
@@ -405,6 +465,12 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         if os.path.exists(range_file): 
             try: os.remove(range_file)
             except: pass
+
+    # ── STOP CHECK ──
+    if _is_stopped(scan_context):
+        log_event("[!] Scan stopped. Partial results may be available.")
+        update_status({"phase": "Stopped"})
+        return
 
     log_event("[+] Scanning phase completed. Consolidating results...")
     update_status({"phase": "📊 Consolidating & Extracting"})
@@ -455,10 +521,18 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 if ip not in ip_to_ports: ip_to_ports[ip] = []
                 ip_to_ports[ip].append(port)
 
+    # ── STOP CHECK ──
+    if _is_stopped(scan_context):
+        log_event("[!] Scan stopped before deep investigation phase.")
+        update_status({"phase": "Stopped"})
+        return
+
     # Run remaining investigations and wait for all background tasks
     investigation_tasks = []
-    for ip, ports in ip_to_ports.items():
-        investigation_tasks.append(process_investigation(ip, ports))
+    for ip, ports_list in ip_to_ports.items():
+        if _is_stopped(scan_context):
+            break
+        investigation_tasks.append(process_investigation(ip, ports_list))
     
     if investigation_tasks or live_tasks:
         log_event(f"[*] Finalizing {len(investigation_tasks) + len(live_tasks)} deep investigation tasks...")
@@ -476,10 +550,50 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     log_event(f"✅ Deep Infra Analysis Completed. Total unique discoveries: {len(discovered_findings)}")
     log_event(f"[*] Combined results available in Tmp: {masscan_combined_file}, {naabu_combined_file}")
     
-    # Cleanup combined files
-    try:
-        os.remove(masscan_combined_file)
-        os.remove(naabu_combined_file)
-    except: pass
+    # Cleanup combined files (respect keep_files flag)
+    keep = scan_context.get("keep_files", False) if scan_context else False
+    if not keep:
+        try:
+            os.remove(masscan_combined_file)
+            os.remove(naabu_combined_file)
+        except: pass
+    else:
+        log_event(f"[*] Keeping result files: {masscan_combined_file}, {naabu_combined_file}")
     
     update_status({"phase": "Idle"})
+
+# ── CIDR Deduplication ────────────────────────────────────────────
+
+def _deduplicate_cidrs(ranges):
+    """Merge overlapping/contained CIDR ranges to minimize scan targets."""
+    if not ranges:
+        return ranges
+    try:
+        networks = []
+        for r in ranges:
+            try:
+                networks.append(ipaddress.ip_network(r, strict=False))
+            except:
+                continue
+        
+        # Sort by network address then by prefix length (largest first)
+        networks.sort(key=lambda n: (n.network_address, n.prefixlen))
+        
+        merged = []
+        for net in networks:
+            # Check if this network is already contained in a previous one
+            is_contained = False
+            for existing in merged:
+                if net.subnet_of(existing):
+                    is_contained = True
+                    break
+            if not is_contained:
+                merged.append(net)
+        
+        result = [str(n) for n in merged]
+        if len(result) < len(ranges):
+            print(f"[*] CIDR dedup: {len(ranges)} → {len(result)} ranges ({len(ranges) - len(result)} removed)")
+        return result
+    except Exception as e:
+        print(f"[!] CIDR dedup failed: {e}, using original ranges")
+        return ranges

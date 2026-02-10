@@ -12,8 +12,10 @@
 - ⚡ **High-Speed Scanning**: Parallel Masscan chunking with real-time progress tracking
 - 🔐 **SSL Certificate Extraction**: Async certificate fetching with Common Name extraction
 - 🛡️ **Technology Detection**: Automatic detection of web technologies, frameworks, and WAFs
+- 📂 **Directory Fuzzing**: Integrated `ffuf` support for discovering hidden paths and admin panels
 - 📊 **Live Dashboard**: Real-time scan progress, logs, and results search
 - 🔖 **Fingerprinting**: Favicon hash (MMH3) and JARM TLS fingerprinting
+- 📥 **Data Export**: Export results to JSON and CSV formats
 
 ## Prerequisites
 
@@ -21,12 +23,13 @@
 - MongoDB (running locally or remote)
 - Masscan (requires sudo)
 - Subfinder (for Full Recon mode)
+- Ffuf (for Directory Fuzzing)
 
 ### macOS Installation
 
 ```bash
 # Install dependencies
-brew install masscan subfinder
+brew install masscan subfinder ffuf
 
 # Start MongoDB
 brew services start mongodb-community
@@ -40,6 +43,9 @@ sudo apt install masscan
 
 # Install Subfinder
 go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+# Install Ffuf
+go install github.com/ffuf/ffuf/v2@latest
 
 # Install MongoDB
 sudo apt install mongodb
@@ -104,7 +110,14 @@ TIMEOUT=5
 | `/get_status` | GET | Get scan progress |
 | `/get_logs` | GET | Get live logs |
 | `/search/title` | GET | Search results by title |
-| `/export` | POST | Export results to JSON |
+| `/export` | POST | Export results to JSON/CSV |
+| `/fuzzing/start/<id>/<domain>` | POST | Start directory fuzzing |
+| `/fuzzing/stop/<id>/<domain>` | POST | Stop directory fuzzing |
+| `/fuzzing/results/<id>/<domain>` | GET | Get fuzzing results |
+| `/settings/get` | GET | Get current settings |
+| `/settings/save` | POST | Save settings |
+| `/tools/status` | GET | Check installed tools |
+| `/tools/install` | POST | Install missing tools |
 
 ## Project Structure
 

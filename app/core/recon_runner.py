@@ -6,11 +6,8 @@ import asyncio
 import subprocess
 from typing import Dict, List, Optional, Any, Set
 from .tools_config import TOOLS, Tool
-from .utils import log_to_server
-
 def log_event(message):
     print(message)
-    log_to_server(message)
 
 class ReconRunner:
     """Executes specifically requested subdomain discovery tools."""

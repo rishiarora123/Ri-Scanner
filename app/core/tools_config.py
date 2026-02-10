@@ -81,6 +81,18 @@ TOOLS: Dict[str, Tool] = {
             "go": "go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"
         },
         usage_template="naabu -host {target} -p 80,443 -silent"
+    ),
+    "ffuf": Tool(
+        id="ffuf",
+        name="Ffuf",
+        category="fuzzing",
+        description="Fast web fuzzer written in Go",
+        check_cmd=["ffuf", "-version"],
+        install_cmds={
+            "go": "go install github.com/ffuf/ffuf/v2@latest",
+            "brew": "brew install ffuf"
+        },
+        usage_template="ffuf -u {url}/FUZZ -w {wordlist} -mc 200,301,302,403 -o {output} -of json -t 50"
     )
 }
 

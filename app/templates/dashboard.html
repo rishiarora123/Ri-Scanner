@@ -271,31 +271,7 @@
         }
     }
 
-    // Modal functions
-    function showStopModal() {
-        document.getElementById('stop-modal').classList.add('active');
-        document.getElementById('modal-overlay').classList.add('active');
-    }
 
-    function closeModal() {
-        document.getElementById('stop-modal').classList.remove('active');
-        document.getElementById('modal-overlay').classList.remove('active');
-    }
-
-    async function confirmStop(keepData) {
-        closeModal();
-        document.getElementById('phase-badge').innerText = 'Terminating...';
-
-        try {
-            await fetch('/stop_scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ save: keepData })
-            });
-        } catch (e) {
-            console.error('Stop error:', e);
-        }
-    }
 
     // Initialize
     statusInterval = setInterval(updateStatus, 1000);

@@ -2,8 +2,10 @@
 Subdomain Manager - MongoDB-based storage for subdomains and domain details
 """
 import os
+import re
 from typing import List, Dict, Optional, Any
 from datetime import datetime
+from pymongo import UpdateOne
 
 class SubdomainManager:
     """Manages subdomain storage and retrieval using MongoDB."""
@@ -33,10 +35,11 @@ class SubdomainManager:
                 print("[!] MongoDB not available in SubdomainManager")
                 return False
 
-            # Bulk operations would be better for performance, but keeping it simple/safe for now
-            # as per previous logic, but now exclusively MongoDB
-            
+            # Build bulk operations in batches of 200
+            BATCH_SIZE = 200
+            ops = []
             ops_count = 0
+            
             for item in subdomains:
                 domain_val = item if isinstance(item, str) else item.get("domain")
                 if not domain_val:
@@ -55,28 +58,33 @@ class SubdomainManager:
                 doc["source"] = source
                 doc["source_type"] = source_type
                 doc["is_from_asn"] = (source_type == "asn")
+                doc["last_checked"] = timestamp
                 
                 if asn_scan_id:
                     doc["asn_scan_id"] = asn_scan_id
                 
-                # Set discovered_at only for new records
                 update_doc = {
                     "$set": doc,
                     "$setOnInsert": {"discovered_at": timestamp}
                 }
                 
-                # Update last_checked for all
-                update_doc["$set"]["last_checked"] = timestamp
-                
-                # Upsert individual subdomain document
-                self.db.subdomains.update_one(
+                ops.append(UpdateOne(
                     {"scan_id": scan_id, "domain": domain_val},
                     update_doc,
                     upsert=True
-                )
+                ))
                 ops_count += 1
+                
+                # Flush batch
+                if len(ops) >= BATCH_SIZE:
+                    self.db.subdomains.bulk_write(ops, ordered=False)
+                    ops = []
             
-            print(f"[*] Saved {ops_count} subdomain records to MongoDB")
+            # Flush remaining
+            if ops:
+                self.db.subdomains.bulk_write(ops, ordered=False)
+            
+            print(f"[*] Saved {ops_count} subdomain records to MongoDB (bulk, batch={BATCH_SIZE})")
             return True
         except Exception as e:
             print(f"[!] MongoDB subdomain save error: {e}")
@@ -108,7 +116,8 @@ class SubdomainManager:
                 if filters.get("is_new_from_asn") is not None:
                     query["is_new_from_asn"] = filters["is_new_from_asn"]
                 if filters.get("search_term"):
-                    query["domain"] = {"$regex": filters["search_term"], "$options": "i"}
+                    safe_term = re.escape(filters["search_term"])
+                    query["domain"] = {"$regex": safe_term, "$options": "i"}
                 if filters.get("status"):
                     try:
                         query["status_code"] = int(filters["status"])
