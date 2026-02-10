@@ -247,11 +247,12 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 log_event(f"[*] Deep Investigation: {ip}...")
                 # 1. Basic Web/SSL Analysis (fast)
                 service_results = {}
+                loop = asyncio.get_running_loop()
                 for p in ports:
                     if _is_stopped(scan_context):
                         return
                     try:
-                        service_results[p] = analyze_service(ip, p)
+                        service_results[p] = await loop.run_in_executor(None, analyze_service, ip, p)
                     except: service_results[p] = {}
                 
                 # 2. Multi-Tool Analysis (Whois, Nmap, DNS, etc.)

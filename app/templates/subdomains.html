@@ -158,7 +158,7 @@
 </div>
 
 <!-- Subdomain Detail Modal -->
-<div id="subdomain-detail-modal" class="modal">
+<div id="subdomain-detail-modal" class="subdomain-modal">
     <div class="modal-content" style="max-width: 900px;">
         <div class="modal-header">
             <h2 id="modal-title" style="margin: 0;">Subdomain Details</h2>
@@ -253,7 +253,7 @@
         color: var(--warning);
     }
 
-    .modal {
+    .subdomain-modal {
         display: none;
         position: fixed;
         z-index: 9999;
@@ -263,12 +263,13 @@
         height: 100%;
         background: rgba(0, 0, 0, 0.8);
         backdrop-filter: blur(10px);
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
     }
 
-    .modal.active {
+    .subdomain-modal.active {
         display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
     }
 
     .modal-content {

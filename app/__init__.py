@@ -4,6 +4,8 @@ Ri-Scanner Pro - Flask Application Factory
 Professional security reconnaissance tool with MongoDB integration.
 """
 import os
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from flask import Flask, jsonify
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
