@@ -4,6 +4,8 @@ import json
 import ssl
 import socket
 import time
+import shlex
+import threading
 import requests
 from bs4 import BeautifulSoup
 
@@ -12,6 +14,8 @@ _ip_info_cache = {}
 _ip_info_cache_ttl = 300  # 5 minutes
 _ip_api_last_call = 0
 _IP_API_MIN_INTERVAL = 1.4  # ~43 req/min (free tier limit is 45/min)
+# SECURITY FIX: Add lock for thread-safe rate limiting
+_ip_api_lock = threading.Lock()
 
 
 def is_valid_domain(common_name):
@@ -74,6 +78,65 @@ def resolve_asn_to_ips(asn):
     print(f"[!] Could not resolve {asn} - all methods failed")
     return []
 
+
+
+def search_bgp_intel(query):
+    """
+    Search BGPView for ASNs by name/description, OR 
+    scrape Hurricane Electric (HE) URLs for ASNs and direct IPv4 ranges.
+    Returns: { "asns": [...], "ipv4": [...] }
+    """
+    results = {"asns": [], "ipv4": []}
+    try:
+        session = _get_session()
+        
+        # 1. Handle HE BGP URL Scraping
+        if "bgp.he.net" in query and (query.startswith("http://") or query.startswith("https://")):
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            response = session.get(query, headers=headers, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Extract ASNs (e.g., AS15169)
+                asn_matches = re.findall(r'AS\d+', response.text)
+                seen_asns = set()
+                for asn in asn_matches:
+                    if asn not in seen_asns:
+                        results["asns"].append({
+                            "asn": asn,
+                            "name": "Scraped from HE",
+                            "country": "??",
+                            "description": f"Discovered via HE Search: {asn}"
+                        })
+                        seen_asns.add(asn)
+                
+                # Extract IPv4 CIDRs (e.g., 8.8.8.0/24)
+                # Regex for simple IPv4 CIDR
+                ipv4_cidr_regex = r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/\d{1,2}\b'
+                ipv4_matches = re.findall(ipv4_cidr_regex, response.text)
+                results["ipv4"] = list(set(ipv4_matches)) # Deduplicate
+            return results
+
+        # 2. Default BGPView Search (by Organization Name)
+        url = f"https://api.bgpview.io/search?query_term={query}"
+        response = session.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "ok" and "data" in data:
+                for item in data["data"].get("asns", []):
+                    results["asns"].append({
+                        "asn": item.get("asn_name", "AS?"),
+                        "name": item.get("name", ""),
+                        "country": item.get("country_code", ""),
+                        "description": item.get("description", "")
+                    })
+        return results
+    except Exception as e:
+        print(f"[!] BGP Search Error: {e}")
+        return results
 
 def _try_bgpview(asn_num):
     """Try BGPView API"""
@@ -147,17 +210,18 @@ def get_ip_info(ip):
         if time.time() - entry["ts"] < _ip_info_cache_ttl:
             return entry["data"]
     
-    # Rate limiting
-    now = time.time()
-    elapsed = now - _ip_api_last_call
-    if elapsed < _IP_API_MIN_INTERVAL:
-        time.sleep(_IP_API_MIN_INTERVAL - elapsed)
+    # SECURITY FIX: Thread-safe rate limiting with lock
+    with _ip_api_lock:
+        now = time.time()
+        elapsed = now - _ip_api_last_call
+        if elapsed < _IP_API_MIN_INTERVAL:
+            time.sleep(_IP_API_MIN_INTERVAL - elapsed)
+        _ip_api_last_call = time.time()
     
     try:
         session = _get_session()
         url = f"http://ip-api.com/json/{ip}?fields=status,message,as,org,country"
         response = session.get(url, timeout=5)
-        _ip_api_last_call = time.time()
         
         if response.status_code == 200:
             data = response.json()
@@ -182,11 +246,16 @@ def get_ip_info(ip):
 # ── SSL / Service Analysis ────────────────────────────────────────
 
 def get_ssl_cn(ip, port=443):
-    """Extract Common Name from SSL certificate."""
+    """Extract Common Name from SSL certificate.
+    SECURITY: Verify hostname and certificate to prevent MITM attacks.
+    """
     try:
+        # Use proper SSL context with hostname verification
         context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        # Use system's certificate bundle for verification
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        
         with socket.create_connection((ip, port), timeout=3) as sock:
             with context.wrap_socket(sock, server_hostname=ip) as ssock:
                 cert = ssock.getpeercert()
@@ -195,6 +264,9 @@ def get_ssl_cn(ip, port=443):
                         for key, value in item:
                             if key == 'commonName':
                                 return value
+    except ssl.SSLError as e:
+        # Log SSL errors separately - they indicate MITM or certificate issues
+        pass
     except Exception:
         pass
     return None
@@ -206,14 +278,34 @@ def analyze_service(ip, port):
     url = f"{protocol}://{ip}:{port}"
     
     result = {
+        "ip": ip,
+        "port": port,
         "url": url,
         "status_code": None,
         "title": "No Title",
         "headers": {},
         "technologies": [],
         "domain": None,
-        "ssl_cn": None
+        "ssl_cn": None,
+        "banner": None
     }
+
+    # 1. Raw TCP Banner Check (Netcat-style)
+    try:
+        with socket.create_connection((ip, port), timeout=2) as sock:
+            # Try to read a banner (e.g., SSH, FTP, or custom NC reply)
+            sock.settimeout(2)
+            try:
+                banner_data = sock.recv(1024)
+                if banner_data:
+                    result["banner"] = banner_data.decode('utf-8', errors='ignore').strip()
+                    # If we got a banner, it's a positive response
+                    if not result["title"] or result["title"] == "No Title":
+                        result["title"] = f"TCP Service: {result['banner'][:50]}"
+            except socket.timeout:
+                pass # No banner, but connection succeeded
+    except Exception:
+        pass # Connection failed
 
     if port == 27017:
         result["title"] = "MongoDB Discovery"
@@ -227,15 +319,16 @@ def analyze_service(ip, port):
             result["domain"] = cn
 
         session = _get_session()
-        response = session.get(url, timeout=5, verify=False, allow_redirects=True)
+        response = session.get(url, timeout=5, verify=True, allow_redirects=True)
         result["status_code"] = response.status_code
         result["headers"] = dict(response.headers)
         
+        # If we have a banner + HTTP, title often comes from HTML
         soup = BeautifulSoup(response.text, 'html.parser')
         if soup.title:
             result["title"] = soup.title.get_text().strip()
             
-        techs = set()
+        techs = set(result["technologies"])
         headers_lower = {k.lower(): v.lower() for k, v in response.headers.items()}
         
         server = headers_lower.get("server", "")

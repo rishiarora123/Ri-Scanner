@@ -11,274 +11,589 @@
         <!-- Phase Badge -->
         <div id="phase-badge" class="phase-badge idle">Idle</div>
 
-        <!-- Masscan Progress -->
-        <div class="progress-container">
-            <div class="progress-header">
-                <span style="display: flex; align-items: center; gap: 0.5rem;">📡 Masscan</span>
-                <span id="masscan-txt" style="font-weight: 600;">0%</span>
+        <!-- ── FIX: Per-Phase Status Cards ─────────────────────────────── -->
+        <!-- Shows each phase name, status (Pending/Running/Waiting/Complete),
+             and summary stats. Driven by scan_status fields from the backend. -->
+        <div id="phase-cards" style="margin-top: 1rem;">
+            <div class="phase-card" id="phase1-card">
+                <div class="phase-card-header">
+                    <span>🔍 Phase 1: Discovery</span>
+                    <span class="phase-status" id="phase1-status">Pending</span>
+                </div>
+                <div class="phase-card-detail" id="phase1-detail"></div>
             </div>
-            <div class="progress-bar">
-                <div id="masscan-bar" class="progress-fill" style="width: 0%;"></div>
+            <div class="phase-card" id="phase2-card">
+                <div class="phase-card-header">
+                    <span>🔬 Phase 2: Intelligence</span>
+                    <span class="phase-status" id="phase2-status">Pending</span>
+                </div>
+                <div class="phase-card-detail" id="phase2-detail"></div>
             </div>
-            <div class="flex-between mt-sm" style="font-size: 0.75rem; color: var(--text-muted);">
-                <span id="masscan-ranges">Chunks: 0 / 0</span>
-                <span id="masscan-eta">ETA: --</span>
+            <div class="phase-card" id="phase4-card">
+                <div class="phase-card-header">
+                    <span>🌏 Phase 4: ASN Expansion</span>
+                    <span class="phase-status" id="phase4-status">Pending</span>
+                </div>
+                <div class="phase-card-detail" id="phase4-detail"></div>
             </div>
-        </div>
-
-        <!-- Naabu Progress -->
-        <div class="progress-container">
-            <div class="progress-header">
-                <span style="display: flex; align-items: center; gap: 0.5rem;">🛰️ Naabu</span>
-                <span id="naabu-txt" style="font-weight: 600;">0%</span>
-            </div>
-            <div class="progress-bar">
-                <div id="naabu-bar" class="progress-fill blue" style="width: 0%;"></div>
-            </div>
-            <div class="flex-between mt-sm" style="font-size: 0.75rem; color: var(--text-muted);">
-                <span id="naabu-status">Waiting...</span>
-            </div>
-        </div>
-
-        <!-- Stats Grid -->
-        <div class="stat-grid mt-md">
-            <div class="stat-card">
-                <div id="found-count" class="stat-value">0</div>
-                <div class="stat-label">Results</div>
-            </div>
-            <div class="stat-card">
-                <div id="active-threads" class="stat-value">0</div>
-                <div class="stat-label">Threads</div>
+            <div class="phase-card" id="phase3-card">
+                <div class="phase-card-header">
+                    <span>📡 Phase 3: Infra Scan</span>
+                    <span class="phase-status" id="phase3-status">Pending</span>
+                </div>
+                <div class="phase-card-detail" id="phase3-detail"></div>
             </div>
         </div>
 
-        <!-- Stop Button -->
-        <button onclick="showStopModal()" class="btn btn-danger btn-full mt-md">🛑 Stop All</button>
+        <!-- Summary Stats -->
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--glass-border);">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: var(--text-muted);">Subdomains Found</span>
+                <span id="stat-subdomains" style="font-weight: 600;">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: var(--text-muted);">Live</span>
+                <span id="stat-live" style="font-weight: 600; color: var(--success);">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: var(--text-muted);">Discoveries</span>
+                <span id="stat-found" style="font-weight: 600; color: var(--primary);">0</span>
+            </div>
+        </div>
     </aside>
 
-    <!-- Main Content - Logs -->
-    <div class="glass card" style="padding: 0; height: 600px; display: flex; flex-direction: column;">
-        <div style="padding: 1rem; border-bottom: 1px solid var(--glass-border);">
-            <h3 style="margin: 0;">Live Logs</h3>
-        </div>
-        <div id="log-container" class="log-container" style="flex: 1;">
-            <div class="log-entry">Initializing dashboard...</div>
-        </div>
-    </div>
-</div>
+    <!-- Main Content -->
+    <div>
+        <!-- ── FIX: User Prompt Panel ──────────────────────────────────── -->
+        <!-- Shown when scan is waiting for user confirmation between phases.
+             Contains Continue/Stop buttons and Phase 3 strategy selector. -->
+        <div id="user-prompt-panel" class="glass card"
+            style="display: none; border: 2px solid var(--primary); margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+                <span style="font-size: 1.8rem;">⏸️</span>
+                <div>
+                    <h3 id="prompt-title" style="margin: 0; color: var(--primary);">Phase Complete</h3>
+                    <p id="prompt-message"
+                        style="margin: 0.25rem 0 0; color: var(--text-secondary); font-size: 0.95rem;"></p>
+                </div>
+            </div>
 
-<!-- Stop Modal -->
-<div id="modal-overlay" class="modal-overlay"></div>
-<div id="stop-modal" class="glass modal">
-    <h3 class="modal-title">Stop Scan?</h3>
-    <p class="modal-body">Do you want to keep the collected data files?</p>
-    <div class="modal-actions">
-        <button onclick="confirmStop(true)" class="btn btn-success">Keep Data</button>
-        <button onclick="confirmStop(false)" class="btn btn-danger">Delete Data</button>
+            <!-- Phase 3 Strategy Selector (only visible before Phase 3) -->
+            <div id="strategy-selector"
+                style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: var(--radius-md);">
+                <h4 style="margin: 0 0 0.75rem; font-size: 0.95rem;">How do you want to run the infrastructure scan?
+                </h4>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <label class="strategy-option">
+                        <input type="radio" name="phase3_strategy" value="sequential" checked>
+                        <span>Sequential (Masscan → Naabu) <em style="color: var(--text-muted);">— Recommended,
+                                stable</em></span>
+                    </label>
+                    <label class="strategy-option">
+                        <input type="radio" name="phase3_strategy" value="masscan_only">
+                        <span>Masscan only</span>
+                    </label>
+                    <label class="strategy-option">
+                        <input type="radio" name="phase3_strategy" value="naabu_only">
+                        <span>Naabu only</span>
+                    </label>
+                    <label class="strategy-option">
+                        <input type="radio" name="phase3_strategy" value="parallel">
+                        <span>Run both together <em style="color: var(--warning);">— Advanced, high resource
+                                usage</em></span>
+                    </label>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem;">
+                <button id="btn-continue" onclick="continueScan()" class="btn btn-primary" style="flex: 1;">
+                    ▶️ Continue to Next Phase
+                </button>
+                <button id="btn-stop-export" onclick="stopAndExport()" class="btn btn-outline"
+                    style="flex: 1; border-color: var(--danger); color: var(--danger);">
+                    ⏹️ Stop & Export
+                </button>
+            </div>
+        </div>
+
+        <!-- ── FIX: Real-Time Infra Scan Progress ──────────────────────── -->
+        <!-- Per-tool progress: Masscan chunk X/Y, %, ETA; Naabu status -->
+        <div id="infra-progress-panel" class="glass card" style="display: none; margin-bottom: 1.5rem;">
+            <h3 style="margin-top: 0;">📡 Infrastructure Scan Progress</h3>
+            <div id="scan-strategy-label" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+            </div>
+
+            <!-- Masscan Progress -->
+            <div class="tool-progress" id="masscan-progress-block">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <span style="font-weight: 600;">🔴 Masscan</span>
+                    <span id="masscan-status-badge" class="tool-status-badge">Pending</span>
+                </div>
+                <div class="progress-container" style="margin-bottom: 0.25rem;">
+                    <div class="progress-bar" id="masscan-bar" style="width: 0%; transition: width 0.5s ease;"></div>
+                </div>
+                <div
+                    style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
+                    <span id="masscan-chunk-info">Chunk 0 / 0</span>
+                    <span id="masscan-pct-info">0%</span>
+                    <span id="masscan-eta-info">ETA: --</span>
+                </div>
+            </div>
+
+            <!-- Naabu Progress -->
+            <div class="tool-progress" id="naabu-progress-block" style="margin-top: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <span style="font-weight: 600;">🟢 Naabu</span>
+                    <span id="naabu-status-badge" class="tool-status-badge">Pending</span>
+                </div>
+                <div class="progress-container" style="margin-bottom: 0.25rem;">
+                    <div class="progress-bar" id="naabu-bar"
+                        style="width: 0%; background: var(--success); transition: width 0.5s ease;"></div>
+                </div>
+                <div
+                    style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted);">
+                    <span id="naabu-chunk-info">Chunk 0 / 0</span>
+                    <span id="naabu-pct-info">0%</span>
+                    <span id="naabu-eta-info">ETA: --</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan Logs -->
+        <div class="glass card">
+            <div class="flex-between mb-md">
+                <h3 style="margin: 0;">📋 Live Scan Logs</h3>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
+                        <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+                    </label>
+                    <button onclick="clearLogs()" class="btn btn-outline btn-sm">Clear</button>
+                </div>
+            </div>
+            <div id="log-container"
+                style="background: rgba(0,0,0,0.3); border-radius: var(--radius-md); padding: 1rem; max-height: 500px; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.6;">
+                <div id="log-content" style="white-space: pre-wrap;">Waiting for scan to start...</div>
+            </div>
+        </div>
     </div>
-    <button onclick="closeModal()" class="btn btn-outline btn-full mt-md">Cancel</button>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <style>
-    #chunk-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
-        gap: 6px;
-        margin-top: 1rem;
+    /* ── FIX: Phase Card Styles ─────────────────────────────────── */
+    .phase-card {
+        padding: 0.6rem 0.75rem;
+        margin-bottom: 0.4rem;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: var(--radius-sm, 6px);
+        border-left: 3px solid var(--glass-border, #333);
+        transition: all 0.3s ease;
     }
 
-    .chunk-cube {
-        width: 24px;
-        height: 24px;
-        background: rgba(16, 185, 129, 0.2);
-        border: 1px solid rgba(16, 185, 129, 0.4);
-        border-radius: 4px;
-        cursor: pointer;
-        position: relative;
-        transition: all 0.2s ease;
+    .phase-card.running {
+        border-left-color: var(--primary, #3b82f6);
+        background: rgba(59, 130, 246, 0.08);
     }
 
-    .chunk-cube:hover {
-        background: var(--success);
-        transform: scale(1.1);
-        z-index: 10;
+    .phase-card.waiting {
+        border-left-color: var(--warning, #f59e0b);
+        background: rgba(245, 158, 11, 0.08);
     }
 
-    .chunk-cube.running {
-        background: var(--success);
-        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-        animation: pulse 2s infinite;
+    .phase-card.complete {
+        border-left-color: var(--success, #10b981);
+        background: rgba(16, 185, 129, 0.06);
     }
 
-    .chunk-tooltip {
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.7rem;
-        white-space: nowrap;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.2s;
-        margin-bottom: 5px;
-        border: 1px solid var(--glass-border);
-        z-index: 100;
+    .phase-card.skipped {
+        opacity: 0.5;
     }
 
-    .chunk-cube:hover .chunk-tooltip {
-        opacity: 1;
-    }
-
-    .chunk-detail-row {
+    .phase-card-header {
         display: flex;
         justify-content: space-between;
-        margin-bottom: 0.25rem;
-        color: var(--text-secondary);
+        align-items: center;
+        font-size: 0.85rem;
+        font-weight: 500;
     }
 
-    .chunk-detail-row span:last-child {
-        color: var(--text-primary);
-        font-family: 'JetBrains Mono', monospace;
+    .phase-card-detail {
         font-size: 0.75rem;
+        color: var(--text-muted, #999);
+        margin-top: 0.25rem;
     }
 
-    .chunk-progress {
-        height: 4px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 2px;
-        margin-top: 0.5rem;
+    .phase-status {
+        font-size: 0.7rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .phase-status.pending {
+        background: rgba(150, 150, 150, 0.2);
+        color: #999;
+    }
+
+    .phase-status.running {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary);
+    }
+
+    .phase-status.waiting {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--warning);
+    }
+
+    .phase-status.complete {
+        background: rgba(16, 185, 129, 0.2);
+        color: var(--success);
+    }
+
+    /* ── Strategy Selector ─────────────────────────────────────── */
+    .strategy-option {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--radius-sm, 6px);
+        cursor: pointer;
+        transition: background 0.2s;
+        font-size: 0.9rem;
+    }
+
+    .strategy-option:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .strategy-option input[type="radio"] {
+        accent-color: var(--primary);
+    }
+
+    /* ── Tool Status Badge ─────────────────────────────────────── */
+    .tool-status-badge {
+        font-size: 0.7rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .tool-status-badge.running {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary);
+    }
+
+    .tool-status-badge.waiting {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--warning);
+    }
+
+    .tool-status-badge.completed {
+        background: rgba(16, 185, 129, 0.2);
+        color: var(--success);
+    }
+
+    .tool-status-badge.skipped {
+        background: rgba(150, 150, 150, 0.2);
+        color: #999;
+    }
+
+    .tool-status-badge.pending {
+        background: rgba(150, 150, 150, 0.15);
+        color: #888;
+    }
+
+    /* ── Progress Bar ──────────────────────────────────────────── */
+    .progress-container {
+        height: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 4px;
         overflow: hidden;
     }
 
-    .chunk-progress-fill {
+    .progress-bar {
         height: 100%;
-        background: var(--success);
-        transition: width 0.3s ease;
+        background: var(--primary, #3b82f6);
+        border-radius: 4px;
+    }
+
+    .tool-progress {
+        padding: 0.75rem;
+        background: rgba(0, 0, 0, 0.15);
+        border-radius: var(--radius-md, 8px);
+    }
+
+    .phase-badge {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        border-radius: 15px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .phase-badge.idle {
+        background: rgba(150, 150, 150, 0.2);
+        color: #999;
+    }
+
+    .phase-badge.running {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary);
+    }
+
+    .phase-badge.waiting {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--warning);
+    }
+
+    .phase-badge.stopped {
+        background: rgba(239, 68, 68, 0.2);
+        color: var(--danger);
     }
 </style>
 
 <script>
-    let logInterval, statusInterval;
-    let lastLogCount = 0;
-    let expandedChunks = new Set();
+    let pollInterval = null;
 
-    // Status updates
-    async function updateStatus() {
+    document.addEventListener('DOMContentLoaded', () => {
+        pollInterval = setInterval(fetchStatus, 1500);
+        fetchStatus();
+        fetchLogs();
+        setInterval(fetchLogs, 2000);
+    });
+
+    // ── FIX: Continue Scan (release next phase gate) ─────────────
+    async function continueScan() {
+        const btn = document.getElementById('btn-continue');
+        btn.disabled = true;
+        btn.innerText = '⏳ Starting...';
+
+        const body = { action: 'continue' };
+
+        // If the strategy selector is visible (Phase 3 gate), include strategy
+        const strategyPanel = document.getElementById('strategy-selector');
+        if (strategyPanel.style.display !== 'none') {
+            const selected = document.querySelector('input[name="phase3_strategy"]:checked');
+            if (selected) body.phase3_strategy = selected.value;
+        }
+
+        try {
+            await fetch('/continue_scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+        } catch (e) {
+            console.error('Continue failed:', e);
+        }
+
+        btn.disabled = false;
+        btn.innerText = '▶️ Continue to Next Phase';
+    }
+
+    // ── FIX: Stop & Export ────────────────────────────────────────
+    async function stopAndExport() {
+        if (!confirm('Stop the scan and export current results?')) return;
+        try {
+            await fetch('/continue_scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'stop' })
+            });
+        } catch (e) {
+            console.error('Stop failed:', e);
+        }
+    }
+
+    // ── FIX: Status Polling — drives entire Dashboard UI ─────────
+    async function fetchStatus() {
         try {
             const res = await fetch('/get_status');
-            const data = await res.json();
-
-            // Phase badge
-            const badge = document.getElementById('phase-badge');
-            badge.innerText = data.phase;
-            badge.className = 'phase-badge';
-            if (data.phase.includes('Masscan')) badge.classList.add('scanning');
-            else if (data.phase.includes('Naabu')) badge.classList.add('extracting');
-            else if (data.phase === 'Idle') badge.classList.add('idle');
-
-            // Masscan progress
-            const mPct = data.masscan_total > 0 ? (data.masscan_progress / data.masscan_total * 100) : 0;
-            document.getElementById('masscan-bar').style.width = `${mPct}%`;
-            document.getElementById('masscan-txt').innerText = `${Math.round(mPct)}%`;
-
-            // Masscan Chunks & ETA
-            document.getElementById('masscan-ranges').innerText =
-                `Chunks: ${data.masscan_ranges_done || 0} / ${data.masscan_ranges_total || 0}`;
-            document.getElementById('masscan-eta').innerText =
-                `ETA: ${data.estimated_remaining || '--'}`;
-
-            // Naabu progress
-            const nPct = data.naabu_total > 0 ? (data.naabu_progress / data.naabu_total * 100) : 0;
-            document.getElementById('naabu-bar').style.width = `${nPct}%`;
-            document.getElementById('naabu-txt').innerText = `${Math.round(nPct)}%`;
-
-            // Naabu status
-            const nStatus = document.getElementById('naabu-status');
-            if (nPct > 0 && nPct < 100) {
-                nStatus.innerText = `Scanning: ${data.naabu_progress} / ${data.naabu_total} chunks`;
-            } else if (nPct === 100) {
-                nStatus.innerText = "Completed";
-            } else {
-                nStatus.innerText = data.phase.includes('Naabu') ? "Running..." : "Waiting...";
-            }
-
-            // Stats
-            document.getElementById('found-count').innerText = data.found_count || 0;
-            document.getElementById('active-threads').innerText = data.active_threads || 0;
-
+            const s = await res.json();
+            updateDashboard(s);
         } catch (e) {
-            console.error('Status update error:', e);
+            console.error('Status poll error:', e);
         }
     }
 
-    function toggleChunk(id) {
-        if (expandedChunks.has(id)) {
-            expandedChunks.delete(id);
+    function updateDashboard(s) {
+        const phase = s.phase || 'Idle';
+        const badge = document.getElementById('phase-badge');
+        badge.innerText = phase;
+
+        // Badge class
+        badge.className = 'phase-badge';
+        if (phase.includes('Waiting') || s.waiting_for_user) badge.classList.add('waiting');
+        else if (phase === 'Idle' || phase === 'Stopped' || phase.includes('Stopping')) badge.classList.add(phase === 'Idle' ? 'idle' : 'stopped');
+        else badge.classList.add('running');
+
+        // Summary stats
+        document.getElementById('stat-subdomains').innerText = s.phase1_subdomains_total || 0;
+        document.getElementById('stat-live').innerText = s.phase1_live || 0;
+        document.getElementById('stat-found').innerText = s.found_count || 0;
+
+        // ── Phase Cards ──────────────────────────────────────────
+        updatePhaseCard('phase1', s, phase);
+        updatePhaseCard('phase2', s, phase);
+        updatePhaseCard('phase4', s, phase);
+        updatePhaseCard('phase3', s, phase);
+
+        // ── User Prompt Panel ────────────────────────────────────
+        const promptPanel = document.getElementById('user-prompt-panel');
+        const strategySelector = document.getElementById('strategy-selector');
+
+        if (s.waiting_for_user) {
+            promptPanel.style.display = 'block';
+            const nextPhase = s.next_phase || 'Next Phase';
+            document.getElementById('prompt-title').innerText = phase.replace('⏸️ ', '');
+            document.getElementById('prompt-message').innerText = `Do you want to continue to ${nextPhase} or stop and export results?`;
+            document.getElementById('btn-continue').innerText = `▶️ Continue to ${nextPhase}`;
+
+            // Show strategy selector only before Phase 3
+            if (s.current_gate === 'gate_phase3') {
+                strategySelector.style.display = 'block';
+            } else {
+                strategySelector.style.display = 'none';
+            }
         } else {
-            expandedChunks.add(id);
+            promptPanel.style.display = 'none';
+        }
+
+        // ── Infra Scan Progress Panel ────────────────────────────
+        const infraPanel = document.getElementById('infra-progress-panel');
+        if (s.masscan_total > 0 || s.naabu_total > 0) {
+            infraPanel.style.display = 'block';
+            document.getElementById('scan-strategy-label').innerText = `Strategy: ${(s.phase3_strategy || 'sequential').replace('_', ' ')}`;
+
+            // Masscan
+            updateToolProgress('masscan', s);
+            // Naabu
+            updateToolProgress('naabu', s);
+        } else if (phase === 'Idle' || phase === 'Stopped') {
+            infraPanel.style.display = 'none';
         }
     }
 
-    // Log fetching
+    function updatePhaseCard(phaseKey, s, currentPhase) {
+        const card = document.getElementById(`${phaseKey}-card`);
+        const statusEl = document.getElementById(`${phaseKey}-status`);
+        const detailEl = document.getElementById(`${phaseKey}-detail`);
+
+        // Determine card state
+        let state = 'pending';
+        let detail = '';
+
+        if (phaseKey === 'phase1') {
+            if (s.phase1_complete) {
+                state = 'complete';
+                const tools = (s.phase1_tools_used || []).join(', ') || 'N/A';
+                detail = `${s.phase1_subdomains_total || 0} total, ${s.phase1_live || 0} live · Tools: ${tools}`;
+            } else if (currentPhase.includes('Phase 1') || currentPhase.includes('Discovery')) {
+                state = 'running';
+                // FIX: Show which tool is currently running and running totals
+                const curTool = s.phase1_current_tool || '';
+                const total = s.phase1_subdomains_total || 0;
+                detail = curTool ? `Running: ${curTool} · ${total} found so far` : `${total} found so far`;
+            }
+        } else if (phaseKey === 'phase2') {
+            if (s.phase2_complete) {
+                state = 'complete';
+                detail = `${s.phase2_total || 0} subdomains scanned`;
+            } else if (currentPhase.includes('Phase 2') || currentPhase.includes('Intelligence')) {
+                state = 'running';
+                // FIX: Show live completion count
+                const done = s.phase2_completed || 0;
+                const total = s.phase2_total || 0;
+                if (total > 0) {
+                    detail = `${done} / ${total} subdomains scanned`;
+                }
+            } else if (s.waiting_for_user && s.current_gate === 'gate_phase2') {
+                state = 'pending';
+            }
+        } else if (phaseKey === 'phase4') {
+            if (s.phase4_complete) {
+                state = 'complete';
+                // FIX: Show actual ASN expansion stats
+                const ranges = s.phase4_ranges_added || 0;
+                const directIps = s.phase4_direct_ips || 0;
+                detail = `${s.phase4_asn_count || 0} ASNs · ${ranges} ranges + ${directIps} direct IPs`;
+            } else if (currentPhase.includes('Phase 4') || currentPhase.includes('ASN')) {
+                state = 'running';
+                detail = `${s.phase4_asn_count || 0} ASNs found`;
+            }
+        } else if (phaseKey === 'phase3') {
+            if (currentPhase.includes('Scanning') || currentPhase.includes('Phase 3')) {
+                state = 'running';
+                const mPct = s.masscan_pct || 0;
+                const nPct = s.naabu_pct || 0;
+                detail = `Masscan: ${mPct}% | Naabu: ${nPct}%`;
+            } else if (currentPhase.includes('Consolidating') || currentPhase === 'Idle') {
+                if (s.masscan_total > 0 || s.naabu_total > 0) {
+                    state = 'complete';
+                }
+            }
+        }
+
+        // Apply
+        card.className = `phase-card ${state}`;
+        statusEl.className = `phase-status ${state}`;
+        statusEl.innerText = state.charAt(0).toUpperCase() + state.slice(1);
+        if (s.waiting_for_user &&
+            ((phaseKey === 'phase1' && s.current_gate === 'gate_phase2') ||
+                (phaseKey === 'phase2' && s.current_gate === 'gate_phase4') ||
+                (phaseKey === 'phase4' && s.current_gate === 'gate_phase3'))) {
+            // The completed phase shows "Waiting" badge
+            statusEl.className = 'phase-status waiting';
+            statusEl.innerText = 'Waiting';
+            card.className = 'phase-card waiting';
+        }
+        detailEl.innerText = detail;
+    }
+
+    function updateToolProgress(tool, s) {
+        const status = s[`${tool}_status`] || 'Pending';
+        const progress = s[`${tool}_progress`] || 0;
+        const total = s[`${tool}_total`] || 0;
+        const pct = s[`${tool}_pct`] || 0;
+        const eta = s[`${tool}_eta`] || '--';
+
+        // Status badge
+        const badge = document.getElementById(`${tool}-status-badge`);
+        badge.innerText = status;
+        badge.className = `tool-status-badge ${status.toLowerCase().split(' ')[0]}`;
+
+        // Progress bar
+        document.getElementById(`${tool}-bar`).style.width = `${pct}%`;
+
+        // Text info
+        document.getElementById(`${tool}-chunk-info`).innerText = `Chunk ${progress} / ${total}`;
+        document.getElementById(`${tool}-pct-info`).innerText = `${pct}%`;
+        document.getElementById(`${tool}-eta-info`).innerText = `ETA: ${eta}`;
+    }
+
+    // ── Log Polling ──────────────────────────────────────────────
     async function fetchLogs() {
         try {
             const res = await fetch('/get_logs');
-            const logs = await res.json();
-
-            if (logs.length !== lastLogCount) {
-                const container = document.getElementById('log-container');
-                container.innerHTML = logs.map(l => {
-                    let className = 'log-entry';
-                    if (l.includes('FOUND:')) className += ' found';
-                    else if (l.includes('[!]')) className += ' error';
-                    return `<div class="${className}">> ${l}</div>`;
-                }).join('');
-                container.scrollTop = container.scrollHeight;
-                lastLogCount = logs.length;
+            const data = await res.json();
+            const logContent = document.getElementById('log-content');
+            if (data.logs && data.logs.length > 0) {
+                logContent.innerText = data.logs.join('\n');
+                if (document.getElementById('auto-scroll').checked) {
+                    const container = document.getElementById('log-container');
+                    container.scrollTop = container.scrollHeight;
+                }
             }
-        } catch (e) { }
-    }
-
-    // Modal functions
-    function showStopModal() {
-        document.getElementById('stop-modal').classList.add('active');
-        document.getElementById('modal-overlay').classList.add('active');
-    }
-
-    function closeModal() {
-        document.getElementById('stop-modal').classList.remove('active');
-        document.getElementById('modal-overlay').classList.remove('active');
-    }
-
-    async function confirmStop(keepData) {
-        closeModal();
-        document.getElementById('phase-badge').innerText = 'Terminating...';
-
-        try {
-            await fetch('/stop_scan', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ save: keepData })
-            });
         } catch (e) {
-            console.error('Stop error:', e);
+            console.error('Log poll error:', e);
         }
     }
 
-
-
-    // Initialize
-    statusInterval = setInterval(updateStatus, 1000);
-    logInterval = setInterval(fetchLogs, 1500);
-    updateStatus();
-    fetchLogs();
-
-    document.getElementById('modal-overlay').addEventListener('click', closeModal);
+    function clearLogs() {
+        document.getElementById('log-content').innerText = 'Logs cleared.';
+    }
 </script>
 {% endblock %}

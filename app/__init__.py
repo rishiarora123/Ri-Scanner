@@ -4,9 +4,7 @@ Ri-Scanner Pro - Flask Application Factory
 Professional security reconnaissance tool with MongoDB integration.
 """
 import os
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 
@@ -27,11 +25,32 @@ def create_app():
     """
     app = Flask(__name__)
     
-    # Configuration from environment variables with defaults
+    # Configuration from environment variables with SECURITY improvements
+    # SECURITY FIX: Generate or load SECRET_KEY once and persist it
+    secret_key_file = os.path.join(os.path.dirname(__file__), '.secret_key')
+    if os.path.exists(secret_key_file):
+        try:
+            with open(secret_key_file, 'r') as f:
+                secret_key = f.read().strip()
+        except PermissionError:
+            print("[!] Warning: Could not read .secret_key (permission denied). Generating temporary key.")
+            secret_key = os.urandom(32).hex()
+    else:
+        secret_key = os.getenv("SECRET_KEY")
+        if not secret_key:
+            secret_key = os.urandom(32).hex()
+            # Save it for persistence across restarts
+            try:
+                with open(secret_key_file, 'w') as f:
+                    f.write(secret_key)
+                os.chmod(secret_key_file, 0o600)  # Restrict to owner only
+            except Exception as e:
+                print(f"[!] Warning: Could not save SECRET_KEY: {e}")
+    
     app.config.update(
         MONGO_URI=os.getenv("MONGO_URI", "mongodb://localhost:27017/"),
         MONGO_DB=os.getenv("MONGO_DB", "Ripro"),
-        SECRET_KEY=os.getenv("SECRET_KEY", os.urandom(24).hex()),
+        SECRET_KEY=secret_key,
     )
     
     # Initialize MongoDB connection
@@ -55,6 +74,25 @@ def create_app():
     # Register Blueprints
     from .routes import main_bp
     app.register_blueprint(main_bp)
+    
+    # SECURITY: Add security headers middleware
+    @app.after_request
+    def add_security_headers(response):
+        """Add security headers to prevent common attacks."""
+        # Prevent MIME sniffing
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        # Prevent clickjacking
+        response.headers['X-Frame-Options'] = 'DENY'
+        # XSS protection (older browsers)
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        # Prevent referrer leakage
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        # Disable caching for sensitive data
+        if request.path.startswith('/api/') or 'settings' in request.path:
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        return response
 
     @app.errorhandler(Exception)
     def handle_exception(e):

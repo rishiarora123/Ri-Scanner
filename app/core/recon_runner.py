@@ -4,6 +4,7 @@ Ri-Scanner Pro - Simplified Recon Runner
 import os
 import asyncio
 import subprocess
+import shlex
 from typing import Dict, List, Optional, Any, Set
 from .tools_config import TOOLS, Tool
 def log_event(message):
@@ -68,11 +69,16 @@ class ReconRunner:
             # Assume keys are already in environment
             pass
 
-        cmd = tool.usage_template.format(domain=target, target=target)
+        # Build command from template - this is safe since template is from code, not user input
+        cmd_str = tool.usage_template.format(domain=target, target=target)
+        
+        # SECURITY FIX: Parse command carefully using shlex to avoid shell injection
+        # This creates a list of arguments for create_subprocess_exec
+        cmd_args = shlex.split(cmd_str)
         
         try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
+            proc = await asyncio.create_subprocess_exec(
+                *cmd_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env

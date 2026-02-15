@@ -3,9 +3,27 @@ __pycache__/
 *$py.class
 .venv/
 .env
+.env.local
+.env.*.local
 .DS_Store
 *.log
 settings.json
 *.conf
 Data/
 Tmp/
+
+# SECURITY: Sensitive files
+app/.secret_key
+credentials.json
+tokens.json
+api_keys.json
+.secret_key
+*.bak
+nc_discoveries.txt
+masscan_*.json
+naabu_*.txt
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

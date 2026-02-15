@@ -4,6 +4,7 @@ import json
 import re
 import socket
 import subprocess
+import shlex
 from typing import Dict, Any, List
 
 async def run_cmd(cmd: str, timeout: int = 30) -> str:
@@ -27,18 +28,26 @@ async def run_cmd(cmd: str, timeout: int = 30) -> str:
         return f"[!] Error running command: {str(e)}"
 
 async def get_whois(ip: str) -> Dict[str, Any]:
-    output = await run_cmd(f"whois {ip}")
-    # Basic parsing
-    owner = "Unknown"
+    # SECURITY FIX: Use list-based subprocess instead of shell=True to prevent command injection
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "whois", ip,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        output = (stdout.decode() + stderr.decode()).strip()
+    except Exception as e:
+        return {"raw": f"[!] WHOIS failed: {str(e)}", "owner": "Unknown", "netblock": "Unknown", "asn": "Unknown", "organization": "Unknown"}
+
+    owner, asn, organization = "Unknown", "Unknown", "Unknown"
     netblocks = []
-    asn = "Unknown"
-    organization = "Unknown"
-    
+
     for line in output.splitlines():
         line_strip = line.strip()
         if not line_strip or line_strip.startswith("%") or line_strip.startswith("#"):
             continue
-            
+
         line_lower = line_strip.lower()
         if "orgname:" in line_lower or "descr:" in line_lower:
             name = line_strip.split(":", 1)[1].strip()
@@ -50,7 +59,7 @@ async def get_whois(ip: str) -> Dict[str, Any]:
             asn = line_strip.split(":", 1)[1].strip()
         if "organization:" in line_lower and organization == "Unknown":
             organization = line_strip.split(":", 1)[1].strip()
-            
+
     return {
         "raw": output,
         "owner": owner,
@@ -60,22 +69,57 @@ async def get_whois(ip: str) -> Dict[str, Any]:
     }
 
 async def get_dns_info(ip: str) -> Dict[str, Any]:
-    ptr = await run_cmd(f"dig -x {ip} +short")
-    nslookup = await run_cmd(f"nslookup {ip}")
+    # SECURITY FIX: Use list-based subprocess calls to prevent command injection
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "dig", "-x", ip, "+short",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        ptr = stdout.decode().strip() or "No PTR record"
+    except:
+        ptr = "No PTR record"
+    
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "nslookup", ip,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        nslookup = (stdout.decode() + stderr.decode()).strip()
+    except:
+        nslookup = "nslookup failed"
+    
     return {
-        "ptr": ptr or "No PTR record",
+        "ptr": ptr,
         "nslookup": nslookup
     }
 
 async def run_nmap(ip: str, ports: List[int] = None) -> Dict[str, Any]:
-    port_str = ""
+    # SECURITY FIX: Use list-based subprocess to prevent command injection on IP/ports
+    cmd = ["nmap", "-sS", "-sV", "-Pn"]
+    
     if ports:
-        port_str = f"-p {','.join(map(str, ports))}"
+        port_arg = ",".join(str(p) for p in ports)
+        cmd.extend(["-p", port_arg])
     else:
-        port_str = "--top-ports 100"
-        
-    # Running a lightweight but informative scan
-    output = await run_cmd(f"nmap -sS -sV -Pn {port_str} {ip}")
+        cmd.extend(["--top-ports", "100"])
+    
+    cmd.append(ip)
+    
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+        output = (stdout.decode() + stderr.decode()).strip()
+    except Exception as e:
+        output = f"[!] Nmap failed: {str(e)}"
+    
     return {
         "raw": output
     }

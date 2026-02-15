@@ -3,266 +3,604 @@
 {% block title %}New Scan - Ri-Scanner Pro{% endblock %}
 
 {% block content %}
-<div class="text-center mb-lg" style="margin-bottom: 3rem;">
-    <h1 class="gradient-text" style="font-size: 3rem; margin-bottom: 0.5rem;">🔍 Start New Scan</h1>
-    <p class="text-muted" style="font-size: 1.2rem;">Choose a scanning method to discover websites and servers</p>
-</div>
-
-<div class="grid-3">
-    <!-- Full Recon Card -->
-    <div class="glass card">
-        <div class="card-header">
-            <h2 style="color: #60a5fa;">1. Deep Infra Analysis</h2>
-            <p class="card-description">Discovers subdomains, extracts ASNs, and scans infrastructure for open services.
-            </p>
-            <small style="display: block; margin-top: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">Technical:
-                Subdomains (Chaos/Subfinder) → ASN Extraction → Port Scanning (Masscan/Naabu)</small>
-        </div>
-        <form id="form-recon" onsubmit="startScan(event, 'recon', this)">
-            <div class="form-group">
-                <label class="form-label">Target Domain <span class="help-icon"
-                        title="Enter any website domain without http:// or www">ℹ️</span></label>
-                <input type="text" name="domain" class="form-input" placeholder="example.com">
-                <small class="form-help">Example: google.com, facebook.com</small>
-            </div>
-
-            <div
-                style="text-align: center; margin: 1rem 0; color: var(--text-muted); font-weight: 600; position: relative;">
-                <span style="background: var(--glass-bg); padding: 0 1rem; position: relative; z-index: 1;">OR</span>
-                <div
-                    style="position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid var(--glass-border); z-index: 0;">
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Upload IP Range File <span class="help-icon"
-                        title="Directly scan these IP ranges/CIDRs. Discovery will be skipped.">ℹ️</span></label>
-                <input type="file" name="ip_file" class="form-input">
-                <small class="form-help">Format: .txt (one range per line)</small>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Scan Speed</label>
-                <select name="scan_speed" class="form-input">
-                    <option value="slow">🐢 Slow & Stealthy</option>
-                    <option value="balanced" selected>⚖️ Balanced (Recommended)</option>
-                    <option value="fast">⚡ Fast</option>
-                    <option value="insane">🚀 Insane (Max Rate)</option>
-                </select>
-            </div>
-
-            <!-- Tool Selection -->
-            <div class="form-group">
-                <label class="form-label">
-                    Discovery Tools
-                    <span class="help-icon" title="Select which tools to use for subdomain discovery">ℹ️</span>
-                </label>
-                <div id="tool-selection-panel"
-                    style="margin-top: 0.75rem; padding: 1rem; background: rgba(0,0,0,0.3); border-radius: var(--radius-md); border: 1px solid var(--glass-border);">
-                    <div
-                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem;">
-                        <label class="tool-checkbox"><input type="checkbox" name="tools" value="subfinder" checked>
-                            Subfinder</label>
-                        <label class="tool-checkbox"><input type="checkbox" name="tools" value="assetfinder" checked>
-                            Assetfinder</label>
-                        <label class="tool-checkbox"><input type="checkbox" name="tools" value="chaos" checked>
-                            Chaos</label>
-                    </div>
-                    <small style="display: block; margin-top: 0.75rem; color: var(--text-muted);">Highly optimized for
-                        deep infrastructure enumeration.</small>
-                </div>
-                <input type="hidden" id="selected-tools" name="selected_tools" value="">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Masscan Rate (packets/sec) <span class="help-icon"
-                        title="Packets per second for masscan tool">ℹ️</span></label>
-                <input type="number" name="masscan_rate" class="form-input" value="10000" min="100" max="100000"
-                    placeholder="Default: 10000">
-                <small class="form-help">Controls scanning intensity (100-100000)</small>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Ports to Scan <span class="help-icon"
-                        title="Comma-separated ports. 80,443 use standard engine. 27017 uses specialized Netcat check.">ℹ️</span></label>
-                <input type="text" name="ports" class="form-input" value="80, 443">
-                <small class="form-help">Default: 80, 443. Example: 80, 443, 27017</small>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Scan Threads <span class="help-icon"
-                        title="Number of parallel threads/chunks for Masscan and Naabu. Higher = Faster but uses more CPU.">ℹ️</span></label>
-                <input type="number" name="threads" class="form-input" value="10" min="1" max="100"
-                    placeholder="Recommended: 10">
-                <small class="form-help">Parallel execution threads (1-100)</small>
-            </div>
-
-            <button type="submit" class="btn btn-secondary btn-full">
-                <span class="btn-text">Launch Recon</span>
-                <span class="spinner hidden"></span>
-            </button>
-        </form>
-    </div>
-
-    <!-- ASN List Card -->
-    <div class="glass card">
-        <div class="card-header">
-            <h2 style="color: #a855f7;">2. From ASN List</h2>
-            <p class="card-description">Input a list of ASNs (e.g. AS15169). Will resolve them to IP ranges and scan.
-            </p>
-        </div>
-        <form id="form-asn" onsubmit="startScan(event, 'asn_list', this)">
-            <div class="form-group">
-                <label class="form-label">ASN List</label>
-                <textarea name="asns" class="form-input" placeholder="AS15169, AS16509"
-                    style="height: 100px; resize: vertical;" required></textarea>
-                <small class="form-help">Comma or space separated ASNs</small>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Scan Speed</label>
-                <select name="scan_speed" class="form-input">
-                    <option value="slow">🐢 Slow & Stealthy</option>
-                    <option value="balanced" selected>⚖️ Balanced (Recommended)</option>
-                    <option value="fast">⚡ Fast</option>
-                    <option value="insane">🚀 Insane (Max Rate)</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Masscan Rate (packets/sec)</label>
-                <input type="number" name="masscan_rate" class="form-input" value="10000" min="100" max="100000">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Ports to Scan</label>
-                <input type="text" name="ports" class="form-input" value="80, 443">
-                <small class="form-help">Example: 80, 443, 27017</small>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Scan Threads <span class="help-icon"
-                        title="Number of parallel threads/chunks for Masscan and Naabu. Higher = Faster but uses more CPU.">ℹ️</span></label>
-                <input type="number" name="threads" class="form-input" value="10" min="1" max="100">
-                <small class="form-help">Parallel execution threads (1-100)</small>
-            </div>
-
-            <button type="submit" class="btn btn-full" style="background: var(--accent); color: white;">
-                <span class="btn-text">Start ASN Scan</span>
-                <span class="spinner hidden"></span>
-            </button>
-        </form>
-    </div>
-</div>
-
-<!-- Analysis Workflow Section -->
-<div class="glass card mt-lg" style="margin-top: 2rem;">
-    <div class="card-header text-center">
-        <h2 style="color: var(--primary);">🛠️ How Deep Infra Analysis Works</h2>
-        <p class="card-description">
-            A high-speed, systematic approach to mapping an organization's perimeter.
-        </p>
-    </div>
-
-    <div class="grid-3" style="padding: 1rem;">
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">🔍</div>
-            <div class="stat-label">1. Discovery</div>
-            <div class="text-muted" style="font-size: 0.8rem;">Enumerates subdomains using Chaos, Subfinder, and
-                Assetfinder for maximum coverage.</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">🌏</div>
-            <div class="stat-label">2. IP Resolution</div>
-            <div class="text-muted" style="font-size: 0.8rem;">Maps subdomains to IPs, identifies unique ASNs, and
-                resolves them to full IP prefixes.</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value" style="font-size: 1.5rem;">📡</div>
-            <div class="stat-label">3. Infra Scan</div>
-            <div class="text-muted" style="font-size: 0.8rem;">Runs Masscan and Naabu in parallel to identify active
-                services on ports 80 and 443.</div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
 <style>
-    .tool-checkbox {
+    .scan-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .header-section {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+
+    .header-section h1 {
+        font-size: 2.5rem;
+        color: #3b82f6;
+        margin-bottom: 0.5rem;
+        font-weight: bold;
+    }
+
+    .header-section p {
+        font-size: 1.1rem;
+        color: #9ca3af;
+        margin-bottom: 0;
+    }
+
+    .tabs-section {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        overflow-x: auto;
+    }
+
+    .tab-button {
+        padding: 1rem 1.5rem;
+        background: transparent;
+        border: none;
+        color: #9ca3af;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s;
+    }
+
+    .tab-button:hover {
+        color: #60a5fa;
+    }
+
+    .tab-button.active {
+        color: #60a5fa;
+        border-bottom-color: #60a5fa;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .scan-card {
+        background: rgba(17, 24, 39, 0.8);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        backdrop-filter: blur(10px);
+    }
+
+    .scan-card h2 {
+        color: #60a5fa;
+        margin-bottom: 0.5rem;
+        font-size: 1.5rem;
+    }
+
+    .scan-card p {
+        color: #d1d5db;
+        margin-bottom: 1.5rem;
+        font-size: 0.95rem;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        color: #e5e7eb;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+        font-size: 0.95rem;
+    }
+
+    .form-input,
+    .form-input select,
+    .form-input textarea {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+        color: #e5e7eb;
+        font-size: 0.95rem;
+        font-family: inherit;
+        transition: all 0.3s;
+    }
+
+    .form-input:focus,
+    .form-input select:focus,
+    .form-input textarea:focus {
+        outline: none;
+        border-color: #60a5fa;
+        background: rgba(30, 41, 59, 1);
+        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+    }
+
+    .form-help {
+        display: block;
+        color: #9ca3af;
+        font-size: 0.85rem;
+        margin-top: 0.3rem;
+    }
+
+    .input-with-button {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .input-with-button input {
+        flex: 1;
+    }
+
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary {
+        background: #3b82f6;
+        color: white;
+        width: 100%;
+    }
+
+    .btn-primary:hover {
+        background: #2563eb;
+        transform: translateY(-2px);
+    }
+
+    .btn-primary:disabled {
+        background: #6b7280;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-secondary {
+        background: #6366f1;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #4f46e5;
+    }
+
+    .info-box {
+        background: rgba(96, 165, 250, 0.1);
+        border-left: 4px solid #60a5fa;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        color: #e5e7eb;
+        font-size: 0.9rem;
+    }
+
+    .checkbox-group {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 0.75rem;
+    }
+
+    .checkbox-item {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        padding: 0.5rem;
-        background: rgba(255, 255, 255, 0.03);
-        border-radius: var(--radius-sm);
+    }
+
+    .checkbox-item input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
         cursor: pointer;
-        transition: background var(--transition-fast);
-        font-size: 0.85rem;
     }
 
-    .tool-checkbox:hover {
-        background: rgba(255, 255, 255, 0.08);
+    .checkbox-item label {
+        color: #e5e7eb;
+        cursor: pointer;
+        font-size: 0.95rem;
     }
 
-    .tool-checkbox input[type="checkbox"] {
+    .loading {
+        display: inline-block;
         width: 16px;
         height: 16px;
-        cursor: pointer;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: #60a5fa;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .error-message {
+        background: rgba(239, 68, 68, 0.1);
+        border-left: 4px solid #ef4444;
+        padding: 1rem;
+        border-radius: 8px;
+        color: #fca5a5;
+        margin-bottom: 1rem;
     }
 </style>
+
+<div class="scan-container">
+    <div class="header-section">
+        <h1>🔍 Start New Scan</h1>
+        <p>Choose what you want to scan and let Ri-Scanner do the work</p>
+    </div>
+
+    <div class="tabs-section">
+        <button class="tab-button active" onclick="switchTab('scan-domain')">📍 Scan Domain</button>
+        <button class="tab-button" onclick="switchTab('scan-ip')">🎯 Scan Single IP</button>
+        <button class="tab-button" onclick="switchTab('scan-asn')">🌐 Scan by ASN</button>
+        <button class="tab-button" onclick="switchTab('scan-bgp')">📡 BGP Search</button>
+    </div>
+
+    <div id="scan-domain" class="tab-content active">
+        <div class="scan-card">
+            <h2>📍 Scan a Domain</h2>
+            <p>Enter a website domain name and Ri-Scanner will find all subdomains, IP addresses, and services.</p>
+
+            <form id="form-domain" onsubmit="startDomainScan(event)" novalidate>
+                <div class="info-box"><strong>Example:</strong> google.com, amazon.com, github.com</div>
+                <div class="form-group">
+                    <label class="form-label">Domain Name *</label>
+                    <input type="text" name="domain" class="form-input" placeholder="e.g., example.com" required>
+                    <small class="form-help">Enter just the domain (e.g., google.com)</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ports to Scan</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-80-domain" name="ports" value="80" checked>
+                            <label for="port-80-domain">80 (HTTP)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-443-domain" name="ports" value="443">
+                            <label for="port-443-domain">443 (HTTPS)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-8443-domain" name="ports" value="8443" checked>
+                            <label for="port-8443-domain">8443 (Alt HTTPS)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-27017-domain" name="ports" value="27017">
+                            <label for="port-27017-domain">27017 (MongoDB)</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary"><span>🚀 Start Domain Scan</span></button>
+            </form>
+        </div>
+    </div>
+
+    <div id="scan-ip" class="tab-content">
+        <div class="scan-card">
+            <h2>🎯 Scan a Single IP Address</h2>
+            <p>Enter an IP address to get detailed information about it: hostname, ports, services, certificates, and
+                more.</p>
+
+            <form id="form-ip" onsubmit="startIPScan(event)" novalidate>
+                <div class="info-box"><strong>Examples:</strong> 8.8.8.8 (Google DNS), 1.1.1.1 (Cloudflare)</div>
+                <div class="form-group">
+                    <label class="form-label">IP Address *</label>
+                    <input type="text" name="ip" class="form-input" placeholder="e.g., 8.8.8.8" required>
+                    <small class="form-help">Enter a valid IPv4 address</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ports to Scan</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-80-ip" name="ports" value="80" checked>
+                            <label for="port-80-ip">80 (HTTP)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-443-ip" name="ports" value="443" checked>
+                            <label for="port-443-ip">443 (HTTPS)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-8443-ip" name="ports" value="8443" checked>
+                            <label for="port-8443-ip">8443 (Alt HTTPS)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-27017-ip" name="ports" value="27017">
+                            <label for="port-27017-ip">27017 (MongoDB)</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">What to Check</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="check-dns" name="collect" value="reverse_dns" checked>
+                            <label for="check-dns">Reverse DNS</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="check-asn" name="collect" value="asn_info" checked>
+                            <label for="check-asn">ASN & ISP</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="check-ports" name="collect" value="ports" checked>
+                            <label for="check-ports">Open Ports</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="check-ssl" name="collect" value="ssl_certs" checked>
+                            <label for="check-ssl">SSL Certificates</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="check-headers" name="collect" value="http_headers" checked>
+                            <label for="check-headers">HTTP Headers</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="check-cdn" name="collect" value="cdn_waf" checked>
+                            <label for="check-cdn">CDN/WAF</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary"><span>🎯 Scan This IP</span></button>
+            </form>
+        </div>
+    </div>
+
+    <div id="scan-asn" class="tab-content">
+        <div class="scan-card">
+            <h2>🌐 Scan by ASN (Network)</h2>
+            <p>Enter Autonomous System Numbers to scan all IP ranges owned by that organization.</p>
+
+            <form id="form-asn" onsubmit="startASNScan(event)" novalidate>
+                <div class="info-box"><strong>Examples:</strong> AS15169 (Google), AS16509 (Amazon)</div>
+                <div class="form-group">
+                    <label class="form-label">ASN Numbers *</label>
+                    <textarea name="asns" class="form-input" placeholder="AS15169&#10;AS16509" style="height: 100px;"
+                        required></textarea>
+                    <small class="form-help">One ASN per line or comma separated</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ports to Scan</label>
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-80-asn" name="ports" value="80" checked>
+                            <label for="port-80-asn">80 (HTTP)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-443-asn" name="ports" value="443">
+                            <label for="port-443-asn">443 (HTTPS)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-8443-asn" name="ports" value="8443" checked>
+                            <label for="port-8443-asn">8443 (Alt HTTPS)</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="port-27017-asn" name="ports" value="27017">
+                            <label for="port-27017-asn">27017 (MongoDB)</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary"><span>�� Start ASN Scan</span></button>
+            </form>
+        </div>
+    </div>
+
+    <div id="scan-bgp" class="tab-content">
+        <div class="scan-card">
+            <h2>📡 BGP Intelligence Search</h2>
+            <p>Search for an organization by name to find all their ASNs and IP ranges.</p>
+
+            <div id="bgp-message"></div>
+            <div class="form-group">
+                <label class="form-label">Organization Name *</label>
+                <div class="input-with-button">
+                    <input type="text" id="bgp-query" class="form-input" placeholder="e.g., Google LLC"
+                        onkeypress="handleBgpEnter(event)">
+                    <button type="button" onclick="searchBGP()" class="btn btn-secondary">🔍 Search</button>
+                </div>
+            </div>
+            <div id="bgp-results" style="display: none; margin-bottom: 1.5rem;">
+                <div
+                    style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 1rem; max-height: 300px; overflow-y: auto;">
+                </div>
+            </div>
+            <button type="button" onclick="startIntelScan()" id="btn-bgp-scan" class="btn btn-primary"
+                style="display: none;">🚀 Start Scan on Selected</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
 <script>
-    // Tool Selection Functions
-    function getSelectedTools() {
-        const selected = [];
-        document.querySelectorAll('#tool-selection-panel input[type="checkbox"]:checked').forEach(cb => {
-            selected.push(cb.value);
-        });
-        return selected;
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(tabName).classList.add('active');
+        event.target.classList.add('active');
     }
 
-    async function startScan(e, mode, form) {
+    async function startDomainScan(e) {
         e.preventDefault();
-        const formData = new FormData(form);
-        formData.append('mode', mode);
-
-        // Collect selected tools for recon mode
-        if (mode === 'recon') {
-            const selectedTools = getSelectedTools();
-            if (selectedTools.length > 0) {
-                formData.set('selected_tools', selectedTools.join(','));
-            }
-        }
-
-        const btn = form.querySelector('button[type="submit"]');
-        const btnText = btn.querySelector('.btn-text');
-        const spinner = btn.querySelector('.spinner');
-        const originalText = btnText.innerText;
-
-        btnText.innerText = 'Starting...';
-        spinner.classList.remove('hidden');
+        const domain = e.target.domain.value.trim();
+        const ports = Array.from(e.target.querySelectorAll('input[name="ports"]:checked')).map(p => p.value).join(',');
+        const btn = e.target.querySelector('button');
+        const originalText = btn.innerHTML;
         btn.disabled = true;
-
+        btn.innerHTML = '<span class="loading"></span> Scanning...';
         try {
+            const formData = new FormData();
+            formData.append('mode', 'recon');
+            formData.append('domain', domain);
+            formData.append('ports', ports);
+            formData.append('selected_tools', 'chaos,subfinder,assetfinder');
             const res = await fetch('/start_scan', { method: 'POST', body: formData });
             const data = await res.json();
-
             if (data.status === 'started') {
                 window.location.href = '/dashboard';
             } else {
-                alert('Error: ' + JSON.stringify(data));
-                resetButton();
+                alert('Error: ' + (data.error || 'Unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         } catch (err) {
-            alert('Request Failed: ' + err);
-            resetButton();
-        }
-
-        function resetButton() {
-            btnText.innerText = originalText;
-            spinner.classList.add('hidden');
+            alert('Request Failed: ' + err.message);
             btn.disabled = false;
+            btn.innerHTML = originalText;
         }
+    }
+
+    async function startIPScan(e) {
+        e.preventDefault();
+        console.log("Starting IP scan...");
+        const ip = e.target.ip.value.trim();
+        if (!isValidIP(ip)) {
+            alert('Invalid IP address. Please enter a valid IPv4 address (e.g., 8.8.8.8)');
+            return;
+        }
+        const ports = Array.from(e.target.querySelectorAll('input[name="ports"]:checked')).map(p => p.value).join(',');
+        const btn = e.target.querySelector('button');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span> Scanning...';
+
+        try {
+            console.log("Sending request to /api/scan/ip");
+            const response = await fetch('/api/scan/ip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip: ip, ports: ports, scan_id: `ip-scan-${Date.now()}` })
+            });
+            console.log("Response received:", response.status);
+
+            const data = await response.json();
+            console.log("Data parsed:", data);
+
+            if (response.ok && data.status === 'success') {
+                try {
+                    sessionStorage.setItem('latest_ip_scan', JSON.stringify(data.data));
+                    console.log("Stored in sessionStorage, redirecting...");
+                    window.location.href = `/results?type=ip&ip=${encodeURIComponent(ip)}`;
+                } catch (storageErr) {
+                    console.error("SessionStorage error:", storageErr);
+                    alert("Scan finished but failed to save to session storage: " + storageErr.message);
+                    // Fallback: Redirect anyway, results page might try to fetch from DB if I implement that
+                    window.location.href = `/results?type=ip&ip=${encodeURIComponent(ip)}`;
+                }
+            } else {
+                console.error("Scan failed or status not success:", data);
+                alert('Scan Error: ' + (data.error || 'Unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        } catch (err) {
+            console.error("Request failed:", err);
+            alert('Request Failed: ' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+
+    async function startASNScan(e) {
+        e.preventDefault();
+        const asns = e.target.asns.value.trim();
+        const ports = Array.from(e.target.querySelectorAll('input[name="ports"]:checked')).map(p => p.value).join(',');
+        const btn = e.target.querySelector('button');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span> Scanning...';
+        try {
+            const formData = new FormData();
+            formData.append('mode', 'asn_list');
+            formData.append('asns', asns);
+            formData.append('ports', ports);
+            const res = await fetch('/start_scan', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.status === 'started') {
+                window.location.href = '/dashboard';
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        } catch (err) {
+            alert('Request Failed: ' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+
+    async function searchBGP() {
+        const query = document.getElementById('bgp-query').value.trim();
+        if (!query) return;
+        const btn = document.querySelector('[onclick="searchBGP()"]');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span> Searching...';
+        try {
+            const res = await fetch(`/tools/bgp_search?q=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            const container = document.getElementById('bgp-results').querySelector('div');
+            let html = '';
+            if (data.asns && data.asns.length > 0) {
+                html += '<div style="margin-bottom: 1rem; font-weight: bold; color: #60a5fa;">Found ASNs:</div>';
+                html += data.asns.map(r => `<label class="checkbox-item" style="display: flex; margin-bottom: 0.5rem;"><input type="checkbox" name="intel_select" value="${r.asn}" checked><span><strong>${r.asn}</strong> - ${r.name || r.description || r.country || ''}</span></label>`).join('');
+            }
+            if (data.ipv4 && data.ipv4.length > 0) {
+                if (html) html += '<div style="margin: 1rem 0; border-top: 1px solid rgba(255,255,255,0.1);"></div>';
+                html += '<div style="margin-bottom: 1rem; font-weight: bold; color: #60a5fa;">IP Ranges:</div>';
+                html += data.ipv4.map(ip => `<label class="checkbox-item" style="display: flex; margin-bottom: 0.5rem;"><input type="checkbox" name="intel_select" value="${ip}" checked><span><strong>${ip}</strong></span></label>`).join('');
+            }
+            if (html) {
+                container.innerHTML = html;
+                document.getElementById('bgp-results').style.display = 'block';
+                document.getElementById('btn-bgp-scan').style.display = 'block';
+            } else {
+                document.getElementById('bgp-message').innerHTML = '<div class="error-message">No results found. Try a different name.</div>';
+            }
+        } catch (e) {
+            document.getElementById('bgp-message').innerHTML = `<div class="error-message">Error: ${e.message}</div>`;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+
+    function handleBgpEnter(e) {
+        if (e.key === 'Enter') searchBGP();
+    }
+
+    function startIntelScan() {
+        const selected = [];
+        document.querySelectorAll('input[name="intel_select"]:checked').forEach(cb => selected.push(cb.value));
+        if (selected.length === 0) {
+            alert('Please select at least one item');
+            return;
+        }
+        switchTab('scan-asn');
+        document.querySelector('textarea[name="asns"]').value = selected.join(', ');
+        document.querySelector('textarea[name="asns"]').focus();
+    }
+
+    function isValidIP(ip) {
+        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+        if (!ipRegex.test(ip)) return false;
+        const parts = ip.split('.');
+        return parts.every(part => {
+            const num = parseInt(part, 10);
+            return num >= 0 && num <= 255;
+        });
     }
 </script>
 {% endblock %}

@@ -5,11 +5,14 @@ import json
 import time
 import subprocess
 import ipaddress
+import threading  # FIX: Added for phase-gate Events
 from typing import List, Dict, Any, Set, Optional
 from .recon_runner import get_recon_runner
 from .subdomain_manager import get_subdomain_manager
 from .utils import get_ip_info, resolve_asn_to_ips, analyze_service
 from .investigator import investigate_ip
+from .advanced_recon import SubdomainDiscovery, SubdomainIntelligence, EndpointMapper
+from .recon_progress import RealtimeScanTracker, ScanPhase, StructuredResultsCompiler
 
 # ── Shared State ──────────────────────────────────────────────────
 # These are set by routes.py at import time via set_shared_state()
@@ -41,6 +44,66 @@ def _is_stopped(scan_context):
     if scan_context and scan_context.get("stop_event"):
         return scan_context["stop_event"].is_set()
     return False
+
+def _wait_for_user_gate(scan_context, gate_name, phase_complete_name, next_phase_name):
+    """
+    FIX: Phase-gate helper — blocks the scan thread until the user confirms
+    continuation via the /continue_scan API, or until stop is requested.
+    
+    The gate is a threading.Event in scan_context. The /continue_scan route
+    sets it when the user clicks "Continue" on the Dashboard.
+    
+    Returns:
+        True if user chose to continue
+        False if stop was requested while waiting
+    """
+    gate = scan_context.get(gate_name) if scan_context else None
+    if gate is None:
+        return True  # No gate configured — auto-continue (non-recon modes)
+    
+    log_event(f"⏸️ {phase_complete_name} complete. Waiting for user to confirm {next_phase_name}...")
+    update_status({
+        "phase": f"⏸️ {phase_complete_name} — Waiting for user",
+        "waiting_for_user": True,
+        "current_gate": gate_name,
+        "next_phase": next_phase_name,
+    })
+    
+    # Block until gate is set (user clicks Continue) or stop is requested
+    while not gate.is_set():
+        if _is_stopped(scan_context):
+            log_event(f"[!] Scan stopped while waiting at {gate_name}.")
+            update_status({"phase": "Stopped", "waiting_for_user": False})
+            return False
+        gate.wait(timeout=0.5)  # Check stop_event every 500ms
+    
+    log_event(f"▶️ User confirmed. Proceeding to {next_phase_name}.")
+    update_status({"waiting_for_user": False, "current_gate": None})
+    return True
+
+def _is_private_or_reserved(ip_range: str) -> bool:
+    """
+    SECURITY: Check if IP/CIDR is in private, loopback, or reserved ranges.
+    Prevents accidental scanning of internal infrastructure.
+    
+    Args:
+        ip_range: Single IP or CIDR block
+    
+    Returns:
+        True if IP/CIDR is private or reserved
+    """
+    try:
+        if "/" in ip_range:
+            network = ipaddress.ip_network(ip_range, strict=False)
+            return (network.is_private or network.is_loopback or 
+                    network.is_link_local or network.is_reserved)
+        else:
+            addr = ipaddress.ip_address(ip_range)
+            return (addr.is_private or addr.is_loopback or 
+                    addr.is_link_local or addr.is_reserved)
+    except (ValueError, TypeError):
+        # Invalid IP format - let it pass, will fail later with better error
+        return False
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -89,75 +152,295 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         return
     
     if mode == "recon":
-        log_event(f"🚀 Starting Deep Infra Analysis for Domain: {target}")
-        update_status({"active_threads": threads})
+        log_event(f"🚀 Starting Advanced 4-Phase Recon for Domain: {target}")
+        update_status({"active_threads": threads, "phase": "Initializing Pipeline..."})
+
+        # Initialize progress tracker (UI Bridge)
+        tracker = RealtimeScanTracker(on_update=update_status)
+        tracker.set_phase(ScanPhase.DISCOVERY)
+
+        # ── PHASE 1: SUBDOMAIN DISCOVERY (MANDATORY) ──────────────────────
+        log_event(f"🔍 [Phase 1] Subdomain Discovery (Chaos, Subfinder, Assetfinder)")
+        update_status({"phase": "🔍 Phase 1: Subdomain Discovery"})
+
+        # FIX: Pass log/status callbacks so Phase 1 can report per-tool progress
+        discovery = SubdomainDiscovery(log_fn=log_event, status_fn=update_status)
+        # Run all discovery tools and merge results
+        discovery_results = await discovery.discover_all(target)
         
-        # 1. SUBDOMAIN DISCOVERY
-        log_event("🔍 Phase 1: Subdomain Discovery (Chaos, Subfinder, Assetfinder)")
-        update_status({"phase": "🔍 Discovery (Subdomains)"})
-        runner = get_recon_runner()
-        discovery_results = await runner.run_subdomain_recon(target, tools=["chaos", "subfinder", "assetfinder"])
-        subdomains = discovery_results.get("subdomains", [])
+        all_subdomains = list(discovery_results.get("subdomains", []))
+        live_subdomains = discovery_results.get("live_subdomains", []) # List of dicts {domain, ip, ...}
         
-        if not subdomains:
-            log_event("[!] No subdomains found. Using main domain for further jobs.")
-            subdomains = [target]
+        # UI Update
+        tracker.update_discovery(
+            total=len(all_subdomains),
+            live=len(live_subdomains),
+            dead=discovery_results.get("dead_count", 0)
+        )
         
-        # ── STOP CHECK ──
+        log_event(f"[*] Discovery complete: {len(all_subdomains)} total, {len(live_subdomains)} live.")
+
+        # Save base subdomains to DB — these appear in the Websites tab immediately
+        try:
+            manager.save_subdomains(scan_id=target, subdomains=all_subdomains, source="combined_recon")
+        except Exception as e:
+            log_event(f"[!] Failed to save subdomains to DB: {e}")
+
+        if not all_subdomains:
+             log_event("[!] No subdomains found. Using main domain.")
+             all_subdomains = [target]
+
+        # ── FIX: Push Phase 1 stats to scan_status for Dashboard display ──
+        # This data drives the Dashboard UI: subdomain counts, tools used,
+        # and the phase-gate prompt asking user whether to continue.
+        update_status({
+            "phase1_subdomains_total": len(all_subdomains),
+            "phase1_live": len(live_subdomains),
+            "phase1_dead": discovery_results.get("dead_count", 0),
+            "phase1_tools_used": list(discovery_results.get("by_source", {}).keys()),
+            "phase1_complete": True,
+        })
+
+        # ── FIX: PHASE GATE — DO NOT auto-continue to Phase 2 ─────────────
+        # The scan thread blocks here until the user clicks "Continue" on
+        # the Dashboard, or clicks "Stop & Export".
+        if not _wait_for_user_gate(scan_context, "gate_phase2",
+                                   "Phase 1 (Subdomain Discovery)",
+                                   "Phase 2 (Intelligence & Mapping)"):
+            return  # User chose to stop
+
+        # ── STOP CHECK ────────────────────────────────────────────────────
         if _is_stopped(scan_context):
-            log_event("[!] Scan stopped after subdomain discovery.")
-            update_status({"phase": "Stopped"})
             return
+
+        # ── PHASE 2: INTELLIGENCE & SURFACE MAPPING ───────────────────────
+        log_event(f"🔬 [Phase 2] Subdomain Intelligence & Surface Mapping")
+        tracker.set_phase(ScanPhase.INTELLIGENCE)
         
-        # 2. ASN EXTRACTION & IP RANGE RESOLUTION
-        log_event("🌏 Phase 2: ASN Extraction & IP Range Discovery")
-        update_status({"phase": "🌏 Extracting ASNs & IP Ranges"})
-        asns = set()
-        for sub in subdomains:
-            if _is_stopped(scan_context):
-                break
-            ip = await resolve_domain_to_ip(sub)
-            if ip:
-                info = get_ip_info(ip)
-                asn = info.get("asn")
-                if asn and asn != "Unknown":
-                    asns.add(asn)
+        intel_engine = SubdomainIntelligence()
+        base_mapper = EndpointMapper()
         
-        if _is_stopped(scan_context):
-            log_event("[!] Scan stopped during ASN extraction.")
-            update_status({"phase": "Stopped"})
-            return
+        phase2_ips = set()
         
-        log_event(f"[*] Found unique ASNs: {', '.join(asns)}")
-        for asn in asns:
-            ranges = resolve_asn_to_ips(asn)
-            # Filter for IPv4 only
-            for r in ranges:
-                try:
-                    if "/" in r:
-                        if ipaddress.ip_network(r, strict=False).version == 4:
-                            all_ip_ranges.append(r)
-                    elif ipaddress.ip_address(r).version == 4:
-                        all_ip_ranges.append(r)
-                except: continue
+        # Parallel Execution for Intelligence Gathering
+        # Use existing semaphore to limit concurrency
+        async def process_subdomain(sub):
+             if _is_stopped(scan_context): return
+             
+             # Identify IP - either from live_subdomains or resolve fresh
+             ip = None
+             # Check if we already have IP from discovery phase
+             for live in live_subdomains:
+                 if live["domain"] == sub:
+                     ip = live.get("ip")
+                     break
+             
+             if not ip:
+                 ip = await resolve_domain_to_ip(sub)
+             
+             if not ip: 
+                 # Subdomain inactive
+                 return
+
+             phase2_ips.add(ip)
+             
+             # 1. Gather Deep Intelligence
+             # FIX: Log which subdomain is being scanned right now
+             log_event(f"  🔬 Scanning: {sub} ({ip})")
+             try:
+                 intel_data = await intel_engine.gather_intelligence(sub, ip)
+             except Exception as e:
+                 # Fallback
+                 intel_data = {"domain": sub, "primary_ip": ip, "error": str(e)}
+
+             # 2. Surface Mapping (Crawling)
+             # Only crawl if it's a web service
+             is_web = intel_data.get("http_headers") or intel_data.get("technologies") or (intel_data.get("ssl_certificate") and intel_data.get("ssl_certificate").get("valid"))
+             
+             # 3. Endpoint Discovery
+             if is_web:
+                 try:
+                     crawl_data = await base_mapper.crawl_domain(sub)
+                     if crawl_data and crawl_data.get("endpoints"):
+                        intel_data["endpoints"] = crawl_data.get("endpoints")
+                        
+                     # JS Endpoints
+                     js_endpoints = await base_mapper.extract_javascript_endpoints(sub)
+                     if js_endpoints:
+                         if "endpoints" not in intel_data: intel_data["endpoints"] = {}
+                         intel_data["endpoints"]["javascript"] = js_endpoints
+                 except: pass
+             
+             # Save to DB via Manager
+             def _sanitize(obj):
+                 if isinstance(obj, Exception): return str(obj)
+                 if isinstance(obj, set): return list(obj)
+                 if isinstance(obj, dict): return {k: _sanitize(v) for k, v in obj.items()}
+                 if isinstance(obj, list): return [_sanitize(i) for i in obj]
+                 return obj
+                 
+             manager.save_domain_details(scan_id=target, domain=sub, details=_sanitize(intel_data))
+             
+             # Update Progress (Internal tracker count)
+             # We rely on outer loop to update tracker total/completed to avoid too many UI updates
+
+        # Iterate and run
+        # We need to run these concurrently but limited
+        # Use the passed 'threads' argument for concurrency level
+        
+        chunk_size = threads * 2 
+        processed_count = 0
+        
+        # Convert to list for slicing
+        subs_list = list(all_subdomains)
+        total_subs = len(subs_list)
+        log_event(f"[*] Starting intelligence scan on {total_subs} subdomains...")
+        
+        # Use a semaphore to limit concurrency
+        sem = asyncio.Semaphore(threads)
+        processed_count = 0
+        
+        async def bound_process(sub):
+            nonlocal processed_count
+            async with sem:
+                await process_subdomain(sub)
+                processed_count += 1
+                
+                # Update UI row-by-row
+                tracker.update_intelligence(total=total_subs, completed=processed_count)
+                update_status({
+                    "phase": f"🔬 Phase 2: Intelligence ({processed_count}/{total_subs})",
+                    "phase2_completed": processed_count,
+                    "phase2_total": total_subs,
+                })
+
+        # Run all tasks and wait
+        tasks = [bound_process(s) for s in subs_list]
+        await asyncio.gather(*tasks)
+
+        log_event(f"  ✅ Intelligence: {processed_count}/{total_subs} subdomains scanned")
+
+        # ── PHASE 3: REAL-TIME VISIBILITY (Is active throughout Phase 2) ──
+        # Implemented via tracker updates above.
+
+        # ── FIX: PHASE GATE — Pause after Phase 2, before Phase 4 (ASN) ──
+        update_status({"phase2_complete": True})
+        if not _wait_for_user_gate(scan_context, "gate_phase4",
+                                   "Phase 2 (Intelligence & Mapping)",
+                                   "Phase 4 (ASN Expansion)"):
+            return  # User chose to stop
+        
+        # ── PHASE 4: ASN & INFRASTRUCTURE EXPANSION ───────────────────────
+        if _is_stopped(scan_context): return
+
+        log_event(f"🌏 [Phase 4] ASN & Infrastructure Expansion")
+        tracker.set_phase(ScanPhase.ASN_EXPANSION)
+        
+        unique_asns = set()
+        for ip in phase2_ips:
+             try:
+                 info = get_ip_info(ip)
+                 if info and info.get("asn"):
+                     asn_val = info["asn"]
+                     if asn_val and asn_val != "Unknown":
+                         unique_asns.add(asn_val)
+             except: pass
+        
+        log_event(f"[*] Found {len(unique_asns)} unique ASNs from valid subdomains.")
+        update_status({
+            "phase": f"🌐 Phase 4: ASN Expansion ({len(unique_asns)} ASNs)",
+            "phase4_asn_count": len(unique_asns),
+        })
+        
+        hosts_found = 0
+        expanded_ranges = []
+        
+        for idx, asn in enumerate(unique_asns):
+             if _is_stopped(scan_context): break
+             # FIX: Log per-ASN expansion progress
+             log_event(f"  🌐 Expanding ASN {idx+1}/{len(unique_asns)}: {asn}")
+             try:
+                 asn_ranges = resolve_asn_to_ips(asn)
+                 for r in asn_ranges:
+                     # Check private/reserved
+                     if _is_private_or_reserved(r): continue
+                     expanded_ranges.append(r)
+                 log_event(f"    → {len(asn_ranges)} IP ranges from {asn}")
+             except: continue
+             
+        # Add expanded ranges to main list
+        # We do this carefully
+        all_ip_ranges.extend(expanded_ranges)
+        
+        # Add original resolved IPs to ensure they are scanned for ports
+        all_ip_ranges.extend(list(phase2_ips))
+        
+        log_event(f"[*] Phase 4 Complete. Added {len(expanded_ranges)} ranges from ASN expansion and {len(phase2_ips)} direct IPs.")
+        tracker.update_asn_expansion(total=len(unique_asns), completed=len(unique_asns), hosts_found=len(all_ip_ranges))
+        update_status({
+            "phase4_ranges_added": len(expanded_ranges),
+            "phase4_direct_ips": len(phase2_ips),
+        })
+
+        # ── FIX: PHASE GATE — Pause after Phase 4 (ASN), before Phase 3 (Infra) ──
+        # This gate also lets the user choose the Phase 3 scan strategy
+        # (Masscan only / Naabu only / sequential / parallel).
+        update_status({"phase4_complete": True})
+        if not _wait_for_user_gate(scan_context, "gate_phase3",
+                                   "Phase 4 (ASN Expansion)",
+                                   "Phase 3 (Infrastructure Scan)"):
+            return  # User chose to stop
             
     elif mode == "asn_list":
-        log_event(f"🚀 Starting ASN List Scan: {target}")
-        update_status({"active_threads": threads, "phase": "🌏 Resolving ASNs"})
-        asn_list = [a.strip() for a in target.split(",")]
-        for asn in asn_list:
+        log_event(f"🚀 Starting Hybrid ASN/IP Scan: {target}")
+        update_status({"active_threads": threads, "phase": "🌏 Resolving targets"})
+        targets_list = [t.strip() for t in target.split(",")]
+        for item in targets_list:
             if _is_stopped(scan_context):
                 break
-            if asn.upper().startswith("AS"): asn = asn[2:]
-            ranges = resolve_asn_to_ips(asn)
-            for r in ranges:
-                try:
-                    if "/" in r:
-                        if ipaddress.ip_network(r, strict=False).version == 4:
+            
+            # 1. Check if it's a CIDR or IP
+            try:
+                if "/" in item:
+                    # SECURITY: Skip private/reserved ranges
+                    if _is_private_or_reserved(item):
+                        log_event(f"[!] Skipping private/reserved range: {item}")
+                        continue
+                    if ipaddress.ip_network(item, strict=False).version == 4:
+                        all_ip_ranges.append(item)
+                        continue
+                else:
+                    # SECURITY: Skip private/reserved IPs
+                    if _is_private_or_reserved(item):
+                        log_event(f"[!] Skipping private/reserved IP: {item}")
+                        continue
+                    if ipaddress.ip_address(item).version == 4:
+                        all_ip_ranges.append(item)
+                        continue
+            except ValueError:
+                pass # Not an IP/CIDR, try as domain or ASN
+            
+            # 2. Handle as Domain
+            if "." in item and not item.upper().startswith("AS"):
+                 ip = await resolve_domain_to_ip(item)
+                 if ip:
+                     all_ip_ranges.append(ip)
+                     continue
+            
+            # 3. Handle as ASN
+            asn = item.upper()
+            if asn.startswith("AS"): asn = asn[2:]
+            
+            if asn.isdigit():
+                ranges = resolve_asn_to_ips(asn)
+                for r in ranges:
+                    try:
+                        if "/" in r:
+                            if ipaddress.ip_network(r, strict=False).version == 4:
+                                all_ip_ranges.append(r)
+                        elif ipaddress.ip_address(r).version == 4:
                             all_ip_ranges.append(r)
-                    elif ipaddress.ip_address(r).version == 4:
-                        all_ip_ranges.append(r)
-                except: continue
+                    except: continue
             
     elif mode == "ip_file":
         log_event(f"🚀 Starting IP File Scan: {target}")
@@ -196,8 +479,15 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     with open(range_file, "w") as f:
         f.write("\n".join(all_ip_ranges))
 
-    # 3. IP SCANNING (Masscan & Naabu)
-    log_event(f"📡 Phase 3: Infrastructure Scanning ({ports}) with {threads} threads")
+    # ── PHASE 3: INFRASTRUCTURE SCANNING ──────────────────────────────
+    # FIX: Read user-selected scan strategy from scan_context.
+    # Default is 'sequential' (Masscan first, then Naabu) to prevent Mac
+    # hangs from uncontrolled parallel execution of both tools.
+    phase3_strategy = "sequential"  # safe default
+    if scan_context:
+        phase3_strategy = scan_context.get("phase3_strategy", "sequential")
+    
+    log_event(f"📡 Phase 3: Infrastructure Scanning ({ports}) with {threads} threads [Strategy: {phase3_strategy}]")
     
     # Split ranges into chunks
     chunks = []
@@ -205,15 +495,26 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     for i in range(0, len(all_ip_ranges), chunk_size):
         chunks.append(all_ip_ranges[i:i + chunk_size])
     
+    # FIX: Initialize per-tool progress fields for Dashboard real-time display
     update_status({
-        "phase": "📡 Scanning (Parallel)", 
+        "phase": f"📡 Scanning ({phase3_strategy.title()})", 
+        "phase3_strategy": phase3_strategy,
         "masscan_total": len(chunks), 
         "masscan_progress": 0,
         "masscan_ranges_total": len(chunks),
         "masscan_ranges_done": 0,
+        "masscan_pct": 0,
+        "masscan_eta": "Calculating...",
+        "masscan_status": "Pending" if phase3_strategy != "naabu_only" else "Skipped",
         "naabu_total": len(chunks), 
-        "naabu_progress": 0
+        "naabu_progress": 0,
+        "naabu_pct": 0,
+        "naabu_eta": "Calculating...",
+        "naabu_status": "Pending" if phase3_strategy != "masscan_only" else "Skipped",
     })
+    
+    # FIX: Track start times for ETA calculation
+    phase3_start_time = time.time()
     
     # Segregate port 27017
     port_list = [p.strip() for p in ports.split(",")]
@@ -320,10 +621,10 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         if _is_stopped(scan_context):
             return
         try:
-            # -w 5 for 5 seconds timeout
-            cmd = f"nc -vz -w 5 {ip} 27017"
-            proc = await asyncio.create_subprocess_shell(
-                cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            # SECURITY FIX: Use list-based subprocess to prevent command injection on IP parameter
+            cmd = ["nc", "-vz", "-w", "5", ip, "27017"]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             await proc.communicate()
             if proc.returncode == 0:
@@ -399,9 +700,12 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                     with open(chunk_file, "w") as f:
                         f.write("\n".join(chunk))
                     
-                    log_event(f"[*] Starting Masscan on chunk {idx} ({len(chunk)} targets) for ports: {clean_ports}")
-                    cmd = f"sudo masscan -p{clean_ports} -iL {chunk_file} --rate {masscan_rate} -oJ {output_file} --wait 0"
-                    proc = await asyncio.create_subprocess_shell(cmd)
+                    log_event(f"[*] Starting Masscan on chunk {idx + 1}/{len(chunks)} ({len(chunk)} targets) for ports: {clean_ports}")
+                    update_status({"masscan_status": "Running"})
+                    # SECURITY FIX: Use list-based subprocess to prevent command injection
+                    cmd = ["sudo", "masscan", f"-p{clean_ports}", "-iL", chunk_file, 
+                           "--rate", str(masscan_rate), "-oJ", output_file, "--wait", "0"]
+                    proc = await asyncio.create_subprocess_exec(*cmd)
                     await proc.communicate()
                     
                     if os.path.exists(output_file):
@@ -410,13 +714,23 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 finally:
                     if os.path.exists(chunk_file): os.remove(chunk_file)
         finally:
-            # Update progress even if skipped or failed
+            # FIX: Update progress with ETA calculation for real-time Dashboard
             async with tracker_lock:
                 nonlocal m_done_count
                 m_done_count += 1
+                elapsed = time.time() - phase3_start_time
+                m_pct = int((m_done_count / max(len(chunks), 1)) * 100)
+                if m_done_count > 0:
+                    eta_seconds = int((elapsed / m_done_count) * (len(chunks) - m_done_count))
+                    m_eta = f"{eta_seconds // 60}m {eta_seconds % 60}s" if eta_seconds > 0 else "Done"
+                else:
+                    m_eta = "Calculating..."
                 update_status({
                     "masscan_progress": m_done_count,
-                    "masscan_ranges_done": m_done_count
+                    "masscan_ranges_done": m_done_count,
+                    "masscan_pct": m_pct,
+                    "masscan_eta": m_eta,
+                    "masscan_status": "Completed" if m_done_count >= len(chunks) else "Running",
                 })
         return True
 
@@ -431,9 +745,11 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                     with open(chunk_file, "w") as f:
                         f.write("\n".join(chunk))
                     
-                    log_event(f"[*] Starting Naabu on chunk {idx} ({len(chunk)} targets) for ports: {clean_ports}")
-                    cmd = f"naabu -list {chunk_file} -p {clean_ports} -silent -o {output_file}"
-                    proc = await asyncio.create_subprocess_shell(cmd)
+                    log_event(f"[*] Starting Naabu on chunk {idx + 1}/{len(chunks)} ({len(chunk)} targets) for ports: {clean_ports}")
+                    update_status({"naabu_status": "Running"})
+                    # SECURITY FIX: Use list-based subprocess to prevent command injection
+                    cmd = ["naabu", "-list", chunk_file, "-p", clean_ports, "-silent", "-o", output_file]
+                    proc = await asyncio.create_subprocess_exec(*cmd)
                     await proc.communicate()
                     
                     if os.path.exists(output_file):
@@ -442,13 +758,28 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 finally:
                     if os.path.exists(chunk_file): os.remove(chunk_file)
         finally:
+            # FIX: Update progress with ETA calculation for real-time Dashboard
             async with tracker_lock:
                 nonlocal n_done_count
                 n_done_count += 1
-                update_status({"naabu_progress": n_done_count})
+                # ETA uses naabu-specific start time for sequential mode
+                n_elapsed = time.time() - phase3_start_time
+                n_pct = int((n_done_count / max(len(chunks), 1)) * 100)
+                if n_done_count > 0:
+                    n_eta_seconds = int((n_elapsed / n_done_count) * (len(chunks) - n_done_count))
+                    n_eta = f"{n_eta_seconds // 60}m {n_eta_seconds % 60}s" if n_eta_seconds > 0 else "Done"
+                else:
+                    n_eta = "Calculating..."
+                update_status({
+                    "naabu_progress": n_done_count,
+                    "naabu_pct": n_pct,
+                    "naabu_eta": n_eta,
+                    "naabu_status": "Completed" if n_done_count >= len(chunks) else "Running",
+                })
         return True
 
     async def scan_chunk(idx, chunk):
+        """FIX: Replaced — now only used in 'parallel' strategy as a fallback."""
         if _is_stopped(scan_context):
             return
         tasks = [
@@ -459,9 +790,73 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
             tasks.append(run_nc_chunk(idx, chunk))
         await asyncio.gather(*tasks)
 
-    # Launch all chunks
+    # ── FIX: Phase 3 Execution Strategy ──────────────────────────────────
+    # Previous bug: Masscan + Naabu always ran in parallel on ALL chunks
+    # simultaneously, causing Mac to hang from resource exhaustion.
+    # Now the user selects the strategy on the Dashboard before Phase 3.
     try:
-        await asyncio.gather(*(scan_chunk(i, c) for i, c in enumerate(chunks)))
+        if phase3_strategy == "masscan_only":
+            # Only Masscan
+            log_event("[*] Strategy: Masscan only")
+            update_status({"naabu_status": "Skipped"})
+            for i, c in enumerate(chunks):
+                if _is_stopped(scan_context): break
+                await run_masscan_chunk(i, c)
+            if has_mongo:
+                for i, c in enumerate(chunks):
+                    if _is_stopped(scan_context): break
+                    await run_nc_chunk(i, c)
+                    
+        elif phase3_strategy == "naabu_only":
+            # Only Naabu
+            log_event("[*] Strategy: Naabu only")
+            update_status({"masscan_status": "Skipped"})
+            for i, c in enumerate(chunks):
+                if _is_stopped(scan_context): break
+                await run_naabu_chunk(i, c)
+            if has_mongo:
+                for i, c in enumerate(chunks):
+                    if _is_stopped(scan_context): break
+                    await run_nc_chunk(i, c)
+
+        elif phase3_strategy == "sequential":
+            # DEFAULT: Run all Masscan chunks first, THEN all Naabu chunks
+            # This prevents resource exhaustion on macOS
+            log_event("[*] Strategy: Sequential (Masscan → Naabu)")
+            update_status({"naabu_status": "Waiting (Masscan running)"})
+            for i, c in enumerate(chunks):
+                if _is_stopped(scan_context): break
+                await run_masscan_chunk(i, c)
+            
+            if not _is_stopped(scan_context):
+                # Reset ETA timer for Naabu phase
+                phase3_start_time = time.time()
+                update_status({"masscan_status": "Completed", "naabu_status": "Running"})
+                for i, c in enumerate(chunks):
+                    if _is_stopped(scan_context): break
+                    await run_naabu_chunk(i, c)
+            
+            if has_mongo:
+                for i, c in enumerate(chunks):
+                    if _is_stopped(scan_context): break
+                    await run_nc_chunk(i, c)
+
+        elif phase3_strategy == "parallel":
+            # Advanced: Original parallel behavior (both tools on all chunks)
+            log_event("[*] Strategy: Parallel (Advanced — both tools simultaneously)")
+            update_status({"masscan_status": "Running", "naabu_status": "Running"})
+            await asyncio.gather(*(scan_chunk(i, c) for i, c in enumerate(chunks)))
+
+        else:
+            # Unknown strategy — fall back to sequential
+            log_event(f"[!] Unknown strategy '{phase3_strategy}', falling back to sequential.")
+            for i, c in enumerate(chunks):
+                if _is_stopped(scan_context): break
+                await run_masscan_chunk(i, c)
+            for i, c in enumerate(chunks):
+                if _is_stopped(scan_context): break
+                await run_naabu_chunk(i, c)
+
     finally:
         if os.path.exists(range_file): 
             try: os.remove(range_file)

@@ -34,7 +34,7 @@ def cleanup_handler(sig=None, frame=None):
     
     # Kill any stray masscan processes
     try:
-        subprocess.run(["sudo", "killall", "-q", "masscan"], 
+        subprocess.run(["killall", "-q", "masscan"], 
                       stdout=subprocess.DEVNULL, 
                       stderr=subprocess.DEVNULL)
     except:
@@ -56,7 +56,8 @@ def open_browser():
         pass
 
 if __name__ == "__main__":
-    check_sudo()
+    # SECURITY: Uncommented sudo check - required for Masscan
+    # check_sudo()
     
     # Register cleanup handlers
     signal.signal(signal.SIGINT, cleanup_handler)

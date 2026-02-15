@@ -152,10 +152,10 @@ def validate_asn_number(asn: str) -> Tuple[bool, str]:
 
 def validate_asn_list(asns_str: str) -> Tuple[bool, str, List[str]]:
     """
-    Validate a comma/space-separated list of ASNs.
+    Validate a comma/space-separated list of ASNs or IP/CIDR ranges.
     
     Args:
-        asns_str: String containing ASNs separated by commas or spaces
+        asns_str: String containing ASNs or CIDRs separated by commas or spaces
     
     Returns:
         (is_valid, message, normalized_list) tuple
@@ -164,23 +164,31 @@ def validate_asn_list(asns_str: str) -> Tuple[bool, str, List[str]]:
         return False, ERROR_MESSAGES["asn_empty"], []
     
     # Split by commas or whitespace
-    asn_list = re.split(r'[,\s]+', asns_str.strip())
+    entries = re.split(r'[,\s]+', asns_str.strip())
     normalized = []
     
-    for asn in asn_list:
-        if not asn:  # Skip empty strings
+    for entry in entries:
+        if not entry:
             continue
         
-        valid, result = validate_asn_number(asn)
-        if not valid:
-            return False, f"{ERROR_MESSAGES['asn_invalid']} Invalid entry: {asn}", []
-        
-        normalized.append(result)
+        # 1. Try as IP/CIDR entry
+        is_ip_range, _ = validate_ip_range(entry)
+        if is_ip_range:
+            normalized.append(entry)
+            continue
+            
+        # 2. Try as ASN entry
+        valid_asn, result = validate_asn_number(entry)
+        if valid_asn:
+            normalized.append(result)
+            continue
+            
+        return False, f"⚠️ Invalid entry: {entry}. Must be ASN (e.g., AS15169) or IP/CIDR (e.g., 1.1.1.0/24).", []
     
     if not normalized:
         return False, ERROR_MESSAGES["asn_empty"], []
     
-    return True, f"✅ {len(normalized)} ASN(s) validated successfully", normalized
+    return True, f"✅ {len(normalized)} target(s) validated successfully", normalized
 
 
 def validate_scan_rate(rate: str) -> Tuple[bool, str, int]:
