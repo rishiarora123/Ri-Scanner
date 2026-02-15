@@ -6,6 +6,7 @@ Multi-stage passive endpoint discovery using robots.txt, sitemap, JS crawling
 import httpx
 import xml.etree.ElementTree as ET
 import re
+import json
 from typing import List, Dict, Set
 from urllib.parse import urljoin
 import asyncio
@@ -213,3 +214,42 @@ class EndpointDiscovery:
             pass
         
         return found
+
+    async def run_katana(self, domain: str) -> List[str]:
+        """Deep crawling using Katana"""
+        endpoints = set()
+        url = f"https://{domain}"
+        
+        try:
+            # Use temporary file for Katana output to ensure clean JSON parsing
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+                tmp_path = tmp.name
+            
+            cmd = ["katana", "-u", url, "-silent", "-json", "-o", tmp_path]
+            
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            await asyncio.wait_for(proc.communicate(), timeout=60)
+            
+            if os.path.exists(tmp_path):
+                with open(tmp_path, 'r') as f:
+                    for line in f:
+                        try:
+                            item = json.loads(line)
+                            if "request" in item and "url" in item["request"]:
+                                endpoints.add(item["request"]["url"])
+                        except:
+                            continue
+                os.remove(tmp_path)
+                
+        except Exception as e:
+            print(f"[!] Katana error for {domain}: {e}")
+            
+        return sorted(list(endpoints))

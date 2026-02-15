@@ -244,8 +244,7 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
 
              phase2_ips.add(ip)
              
-             # 1. Gather Deep Intelligence
-             # FIX: Log which subdomain is being scanned right now
+             # 1. Gather Deep Intelligence (Includes DNS, SSL, Headers, Tech, Passive Endpoints, and Katana)
              log_event(f"  🔬 Scanning: {sub} ({ip})")
              try:
                  intel_data = await intel_engine.gather_intelligence(sub, ip)
@@ -253,23 +252,17 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                  # Fallback
                  intel_data = {"domain": sub, "primary_ip": ip, "error": str(e)}
 
-             # 2. Surface Mapping (Crawling)
-             # Only crawl if it's a web service
-             is_web = intel_data.get("http_headers") or intel_data.get("technologies") or (intel_data.get("ssl_certificate") and intel_data.get("ssl_certificate").get("valid"))
+             # 2. Automated Safe Fuzzing
+             is_web = intel_data.get("status_code") or intel_data.get("technologies") or (intel_data.get("ssl_certificate") and intel_data.get("ssl_certificate").get("valid"))
              
-             # 3. Endpoint Discovery
              if is_web:
                  try:
-                     crawl_data = await base_mapper.crawl_domain(sub)
-                     if crawl_data and crawl_data.get("endpoints"):
-                        intel_data["endpoints"] = crawl_data.get("endpoints")
-                        
-                     # JS Endpoints
-                     js_endpoints = await base_mapper.extract_javascript_endpoints(sub)
-                     if js_endpoints:
-                         if "endpoints" not in intel_data: intel_data["endpoints"] = {}
-                         intel_data["endpoints"]["javascript"] = js_endpoints
-                 except: pass
+                     from .fuzzing_manager import fuzzing_manager
+                     # Use target as scan_id. This is a "safe" background fuzz
+                     await fuzzing_manager.start_fuzzing(scan_id=target, domain=sub)
+                     log_event(f"  ⚡ Triggered automated fuzzing for {sub}")
+                 except Exception as e:
+                     log_event(f"  [!] Fuzzing trigger failed for {sub}: {e}")
              
              # Save to DB via Manager
              def _sanitize(obj):

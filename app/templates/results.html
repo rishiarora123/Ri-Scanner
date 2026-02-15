@@ -296,20 +296,49 @@
         word-wrap: break-word;
     }
 
-    .tech-tag {
-        display: inline-block;
-        padding: 0.35rem 0.75rem;
-        background: rgba(59, 130, 246, 0.15);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 12px;
-        font-size: 0.8rem;
+    .hidden {
+        display: none !important;
+    }
+
+    .detail-tabs {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0 2rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        overflow-x: auto;
+    }
+
+    .detail-tab {
+        padding: 0.75rem 1.5rem;
+        background: none;
+        border: none;
+        color: #9ca3af;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+
+    .detail-tab.active {
         color: #60a5fa;
-        margin-right: 0.5rem;
-        margin-bottom: 0.5rem;
+        border-bottom-color: #60a5fa;
+        background: rgba(59, 130, 246, 0.05);
+    }
+
+    .detail-tab:hover:not(.active) {
+        color: #e5e7eb;
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .tab-content.hidden {
+        display: none;
     }
 </style>
 
 <script>
+    let subdomainLogInterval = null;
+    let currentDetailDomain = null;
     let currentPage = 1;
     let totalPages = 1;
     let filtersVisible = false;
@@ -318,11 +347,68 @@
     let refreshInterval = null;
     let lastRefreshCount = 0;
 
+    function switchTab(e, tabName) {
+        if (e) e.preventDefault();
+        const target = e ? e.currentTarget : document.querySelector(`.detail-tab[onclick*="${tabName}"]`);
+
+        console.log(`Switching to tab: ${tabName}`);
+
+        // Remove active from all tabs
+        document.querySelectorAll('.detail-tab').forEach(tab => tab.classList.remove('active'));
+        // Hide all tab content
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+            content.style.display = 'none';
+        });
+
+        // Activate clicked tab
+        if (target) target.classList.add('active');
+
+        const contentPanel = document.getElementById(`tab-${tabName}`);
+        if (contentPanel) {
+            contentPanel.classList.remove('hidden');
+            contentPanel.style.display = 'block';
+            console.log(`Showing panel: tab-${tabName}`);
+        } else {
+            console.error(`Panel not found: tab-${tabName}`);
+        }
+
+        // Handle Logs Tab Polling
+        if (typeof subdomainLogInterval !== 'undefined' && subdomainLogInterval) clearInterval(subdomainLogInterval);
+        if (tabName === 'logs' && typeof currentDetailDomain !== 'undefined' && currentDetailDomain) {
+            if (typeof pollSubdomainLogs === 'function') {
+                pollSubdomainLogs(currentDetailDomain);
+                subdomainLogInterval = setInterval(() => pollSubdomainLogs(currentDetailDomain), 2000);
+            }
+        }
+    }
+
+    async function pollSubdomainLogs(domain) {
+        const container = document.getElementById('subdomain-log-container');
+        if (!container) return;
+
+        try {
+            const res = await fetch('/get_logs');
+            const logs = await res.json();
+
+            const filtered = logs.filter(line => line.toLowerCase().includes(domain.toLowerCase()));
+
+            if (filtered.length > 0) {
+                container.innerHTML = filtered.map(line => `<div style="margin-bottom: 2px;">${escapeHtml(line)}</div>`).join('');
+                container.scrollTop = container.scrollHeight;
+            } else {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding-top: 100px;">No specific logs found for this target yet...</p>';
+            }
+        } catch (e) {
+            console.error("Log fetch error:", e);
+        }
+    }
+
     // HTML escape function to prevent XSS
     function escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
-        div.textContent = String(text);
+        div.textContent = text;
         return div.innerHTML;
     }
 
@@ -572,7 +658,7 @@
                 const techFp = r.technology_fingerprint || {};
                 const cdnWaf = r.cdn_waf_enhanced || {};
                 const endpoints = r.endpoints || {};
-                
+
                 // Extract technologies from multiple sources
                 const techs = new Set();
                 if (techFp.technologies) techFp.technologies.forEach(t => techs.add(t));
@@ -580,13 +666,13 @@
                 if (httpIntel.tech_indicators) Object.values(httpIntel.tech_indicators).forEach(t => {
                     if (Array.isArray(t)) t.forEach(x => techs.add(x));
                 });
-                
+
                 // Extract WAF/CDN
                 let wafTag = null;
                 if (cdnWaf.waf_detection && cdnWaf.waf_detection.detected) {
                     wafTag = cdnWaf.waf_detection.detected[0];
                 }
-                
+
                 data = {
                     ip: r.primary_ip || r.ip || 'N/A',
                     port: r.port || 80,
@@ -796,153 +882,130 @@
 
         // Update subtitle
         document.getElementById('detail-subtitle').textContent = `IP: ${resultData.ip || 'N/A'} | Port: ${resultData.port || 'N/A'} | Status: ${resultData.status_code || 'Unknown'}`;
+        document.querySelector('.modal-title').textContent = resultData.domain || resultData.ip || 'Target Details';
 
-        let content = '';
+        let content = `
+            <div class="detail-tabs">
+                <button class="detail-tab active" onclick="switchTab(event, 'overview')">Overview</button>
+                <button class="detail-tab" onclick="switchTab(event, 'headers')">Headers</button>
+                <button class="detail-tab" onclick="switchTab(event, 'technologies')">Technologies</button>
+                <button class="detail-tab" onclick="switchTab(event, 'endpoints')">Endpoints</button>
+                <button class="detail-tab" onclick="switchTab(event, 'apis')">APIs</button>
+                <button class="detail-tab" onclick="switchTab(event, 'security')">Security</button>
+                <button class="detail-tab" onclick="switchTab(event, 'fuzzing')">Fuzzing</button>
+                <button class="detail-tab" onclick="switchTab(event, 'logs')">Logs</button>
+            </div>
+        `;
 
-        // --- Helper to render sections with better styling ---
-        const renderSection = (title, icon, items) => {
-            if (!items || items.length === 0) return '';
-            return `
-                <div class="detail-section">
-                    <h3>${icon} ${title}</h3>
-                    <div class="detail-grid">
-                        ${items.map(i => `
-                            <div class="detail-item">
-                                <div class="label">${i.label}</div>
-                                <div class="value">${i.value}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        };
+        // --- Tab Contents ---
 
-        const renderCodeBlock = (title, icon, code) => {
-            if (!code || code.includes('[!] Error') || code === 'N/A') return '';
-            return `
-                <div class="detail-section">
-                    <h4>${icon} ${title}</h4>
-                    <div class="code-block">${escapeHtml(code)}</div>
-                </div>
-            `;
-        };
-
-        // --- Data Extraction ---
-        // Asset Info (Whois, ASN, etc.)
+        // 1. Overview Tab
+        let overviewHtml = `
+            <div id="tab-overview" class="tab-content">
+        `;
         const whois = resultData.whois || {};
         const assetItems = [
             { label: 'IP Address', value: resultData.ip || 'N/A' },
             { label: 'Port', value: resultData.port || 'N/A' },
-            { label: 'TCP Banner', value: `<span style="color:#22c55e; font-family:monospace;">${escapeHtml(resultData.banner || 'None')}</span>` },
             { label: 'ASN', value: resultData.asn || 'N/A' },
             { label: 'Organization', value: resultData.org || whois.organization || 'N/A' },
-            { label: 'Country', value: resultData.country || 'N/A' },
-            { label: 'Netblock', value: whois.netblock || 'N/A' },
-            { label: 'Owner', value: whois.owner || 'N/A' }
+            { label: 'Country', value: resultData.country || 'N/A' }
         ];
-
-        // Web Info
         const webItems = [
             { label: 'Domain (SSL CN)', value: resultData.domain || 'N/A' },
             { label: 'Page Title', value: resultData.title || 'No Title' },
-            { label: 'Status Code', value: resultData.status_code || '---' },
             { label: 'Request URL', value: `<a href="${resultData.request}" target="_blank" style="color: #60a5fa; text-decoration: underline;">${resultData.request || 'N/A'}</a>` }
         ];
 
-        // DNS Info
-        const dns = resultData.dns || {};
-        const dnsItems = [
-            { label: 'PTR Record', value: dns.ptr || 'N/A' }
-        ];
+        overviewHtml += renderSection('🌍 Asset Intelligence', '', assetItems);
+        overviewHtml += renderSection('🌐 Web Service Details', '', webItems);
 
-        // Exposure Indicators
-        const exposureHtml = (resultData.exposures || []).length > 0 ? `
-            <div class="detail-section" style="border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.08);">
-                <h3 style="color: #ef4444; margin-top: 0;">🚨 Critical Exposures Detected</h3>
-                <ul style="margin: 0; padding-left: 1.5rem; color: #e5e7eb; line-height: 1.8;">
-                    ${resultData.exposures.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
-                </ul>
-            </div>
-        ` : '';
+        if (resultData._is_deep_scan && resultData._raw_scan.reverse_dns) {
+            overviewHtml += renderSection('🧬 DNS Intelligence', '', [{ label: 'PTR Record', value: resultData._raw_scan.reverse_dns.hostname || 'N/A' }]);
+        }
+        overviewHtml += `</div>`;
 
-        // --- Build Final Content ---
-        content += exposureHtml;
-        content += renderSection('🌍 Asset Intelligence', '', assetItems);
-        content += renderSection('🌐 Web Service Details', '', webItems);
-        content += renderSection('🧬 DNS Intelligence', '', dnsItems);
+        // 2. Headers Tab
+        let headersHtml = `<div id="tab-headers" class="tab-content hidden">`;
+        if (resultData._is_deep_scan && resultData._raw_scan.http_services) {
+            headersHtml += resultData._raw_scan.http_services.map(s => `
+                <div style="margin-bottom: 1rem;">
+                    <h4>${s.scheme.toUpperCase()} Header (Port ${s.port})</h4>
+                    <div class="code-block">${escapeHtml(JSON.stringify(s.headers, null, 2))}</div>
+                </div>
+            `).join('');
+        } else {
+            headersHtml += `<p style="color: var(--text-muted); text-align: center; padding: 2rem;">No HTTP headers available for this target.</p>`;
+        }
+        headersHtml += `</div>`;
 
+        // 3. Technologies Tab
+        let techHtml = `<div id="tab-technologies" class="tab-content hidden">`;
         if (resultData.technologies && resultData.technologies.length > 0) {
-            content += `
-                <div class="detail-section">
-                    <h4>🔧 Detected Technology Stack</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                        ${resultData.technologies.map(t => `<span class="tech-tag">${escapeHtml(t)}</span>`).join('')}
-                    </div>
+            techHtml += `
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem;">
+                    ${resultData.technologies.map(t => `<span class="tech-tag" style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 0.35rem 0.75rem; color: #60a5fa; font-size: 0.8rem;">${escapeHtml(t)}</span>`).join('')}
                 </div>
             `;
+        } else {
+            techHtml += `<p style="color: var(--text-muted); text-align: center; padding: 2rem;">No technologies detected.</p>`;
         }
+        techHtml += `</div>`;
 
-        content += renderCodeBlock('🛰️ Nmap Service Scan', '', resultData.nmap?.raw);
-        content += renderCodeBlock('🔐 SSL/TLS Detail', '', resultData.ssl_raw);
-        content += renderCodeBlock('📋 Whois Raw Output', '', resultData.whois?.raw);
-        content += renderCodeBlock('🔍 DNS Output (Nslookup)', '', resultData.dns?.nslookup);
+        // 4. Endpoints & 5. APIs (Placeholders or limited data)
+        let endpointsHtml = `<div id="tab-endpoints" class="tab-content hidden">
+            <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Perform a deeper crawl to discover endpoints.</p>
+        </div>`;
+        let apisHtml = `<div id="tab-apis" class="tab-content hidden">
+            <p style="color: var(--text-muted); text-align: center; padding: 2rem;">No API endpoints identified yet.</p>
+        </div>`;
 
-        if (resultData._is_deep_scan) {
-            const scan = resultData._raw_scan;
-
-            // Render Ports Table
-            if (scan.open_ports && scan.open_ports.length > 0) {
-                content += `
-                    <div class="detail-section">
-                        <h3>🔌 Open Ports & Services</h3>
-                        <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
-                            <thead>
-                                <tr style="text-align: left; border-bottom: 1px solid rgba(59, 130, 246, 0.3);">
-                                    <th style="padding: 0.5rem;">Port</th>
-                                    <th style="padding: 0.5rem;">Protocol</th>
-                                    <th style="padding: 0.5rem;">Service</th>
-                                    <th style="padding: 0.5rem;">State</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${scan.open_ports.map(p => `
-                                    <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
-                                        <td style="padding: 0.5rem; color: #60a5fa; font-weight: bold;">${p.port}</td>
-                                        <td style="padding: 0.5rem;">${p.protocol}</td>
-                                        <td style="padding: 0.5rem;">${escapeHtml(p.service)}</td>
-                                        <td style="padding: 0.5rem;"><span class="tag tag-tech">${p.state}</span></td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            }
-
-            // Render HTTP Services
-            if (scan.http_services && scan.http_services.length > 0) {
-                content += `
-                    <div class="detail-section">
-                        <h3>🌐 HTTP Services</h3>
-                        ${scan.http_services.map(s => `
-                            <div style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px;">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
-                                    <span style="font-weight: bold; color: #60a5fa;">${s.scheme.toUpperCase()} on Port ${s.port}</span>
-                                    <span class="tag ${s.status_code >= 200 && s.status_code < 300 ? 'tag-tech' : 'tag-danger'}">${s.status_code}</span>
-                                </div>
-                                <div style="margin-bottom: 0.5rem;"><strong>Title:</strong> ${escapeHtml(s.title || 'No Title')}</div>
-                                <div style="margin-bottom: 0.5rem;"><strong>Server:</strong> ${escapeHtml(s.server || 'Unknown')}</div>
-                                <div class="code-block" style="font-size: 0.7rem;">${escapeHtml(JSON.stringify(s.headers, null, 2))}</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-            }
+        // 6. Security Tab
+        let securityHtml = `<div id="tab-security" class="tab-content hidden">`;
+        const exposures = resultData.exposures || [];
+        if (exposures.length > 0) {
+            securityHtml += `
+                <div class="detail-section" style="border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.08);">
+                    <h3 style="color: #ef4444; margin-top: 0;">🚨 Critical Exposures Detected</h3>
+                    <ul style="margin: 0; padding-left: 1.5rem; color: #e5e7eb; line-height: 1.8;">
+                        ${exposures.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        } else {
+            securityHtml += `<p style="color: var(--text-muted); text-align: center; padding: 2rem; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px;">No immediate security vulnerabilities found.</p>`;
         }
+        securityHtml += `</div>`;
 
-        if (!content) content = '<div style="text-align: center; color: var(--text-muted);">No response data</div>';
+        // 7. Fuzzing Tab
+        let fuzzingHtml = `<div id="tab-fuzzing" class="tab-content hidden">
+            <div style="text-align: center; padding: 2rem;">
+                <p style="color: var(--text-muted); margin-bottom: 1rem;">No active fuzzing jobs for this target.</p>
+                <button class="btn btn-primary" onclick="startFuzz()">Launch Directory Fuzz</button>
+            </div>
+        </div>`;
+
+        // 8. Logs Tab
+        let logsHtml = `
+            <div id="tab-logs" class="tab-content hidden">
+                <div class="flex-between mb-md">
+                    <h3 style="margin:0;">Live Progress Logs</h3>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">Showing activity for: <strong>${resultData.domain || resultData.ip}</strong></div>
+                </div>
+                <div id="subdomain-log-container" style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; height: 350px; overflow-y: auto; color: #a1a1aa; line-height: 1.5;">
+                    <p style="text-align: center; padding-top: 100px;">Initializing log stream...</p>
+                </div>
+            </div>
+        `;
+
+        // Assemble all tabs
+        content += overviewHtml + headersHtml + techHtml + endpointsHtml + apisHtml + securityHtml + fuzzingHtml + logsHtml;
+        currentDetailDomain = resultData.domain || resultData.ip;
 
         document.getElementById('detail-content').innerHTML = content;
+        document.getElementById('detail-actions').style.display = 'flex';
+        document.getElementById('detail-modal').classList.add('active');
+        document.getElementById('modal-overlay').classList.add('active');
         document.getElementById('detail-actions').style.display = 'flex';
         document.getElementById('detail-modal').classList.add('active');
         document.getElementById('modal-overlay').classList.add('active');

@@ -93,6 +93,18 @@ TOOLS: Dict[str, Tool] = {
             "brew": "brew install ffuf"
         },
         usage_template="ffuf -u {url}/FUZZ -w {wordlist} -mc 200,301,302,403 -o {output} -of json -t 50"
+    ),
+    "katana": Tool(
+        id="katana",
+        name="Katana",
+        category="crawling",
+        description="Next-generation crawling and spidering framework",
+        check_cmd=["katana", "-version"],
+        install_cmds={
+            "go": "go install github.com/projectdiscovery/katana/cmd/katana@latest",
+            "brew": "brew install katana"
+        },
+        usage_template="katana -u {url} -silent -json -o {output}"
     )
 }
 

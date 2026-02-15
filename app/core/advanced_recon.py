@@ -122,7 +122,7 @@ class SubdomainDiscovery:
         }
     
     async def _run_discovery_tool(self, tool: str, domain: str) -> List[str]:
-        """Run individual discovery tool"""
+        """Run individual discovery tool and stream logs in real-time"""
         try:
             if tool == "chaos":
                 cmd = ["chaos", "-d", domain, "-silent"]
@@ -133,16 +133,43 @@ class SubdomainDiscovery:
             else:
                 return []
             
+            self._log(f"  🚀 Executing: {' '.join(cmd)}")
+            
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=180)
             
-            subs = [line.decode().strip() for line in stdout.split(b'\n') if line.strip()]
-            return [s for s in subs if s.endswith(domain)]
-        except:
+            found_subs = []
+            
+            # Read stdout line by line for real-time logging
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                
+                decoded_line = line.decode().strip()
+                if not decoded_line:
+                    continue
+                
+                # Basic validation: must end with domain and not contain spaces
+                if decoded_line.endswith(domain) and ' ' not in decoded_line:
+                    found_subs.append(decoded_line)
+                    # Periodically log batches to avoid flooding but show activity
+                    if len(found_subs) % 50 == 0:
+                        self._log(f"  [+] {tool} discovered {len(found_subs)} subdomains so far...")
+            
+            # Wait for process to finish
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                try: proc.kill()
+                except: pass
+                
+            return list(set(found_subs))
+        except Exception as e:
+            self._log(f"  [!] {tool} error: {str(e)}")
             return []
     
     async def _validate_subdomains(self, subdomains: Set[str], timeout: int = 2) -> List[Dict]:
@@ -249,6 +276,7 @@ class SubdomainIntelligence:
             # NEW PHASE 2 ENHANCEMENTS
             self.http_intel.fetch_headers_comprehensive(subdomain),
             self.endpoint_disc.discover_all_endpoints(subdomain),
+            self.endpoint_disc.run_katana(subdomain),
             self.tech_fp.fingerprint_all(subdomain),
             self.cdn_waf.detect_all(subdomain),
             self.ip_geo.geolocate_ip(ip),
@@ -261,7 +289,7 @@ class SubdomainIntelligence:
         task_names = [
             "ip_intelligence", "dns_records", "ssl_certificate", "http_headers",
             "cdn_waf_detection", "technology_stack", "http_intelligence",
-            "endpoints", "technology_fingerprint", "cdn_waf_enhanced", "geolocation"
+            "endpoints", "katana_endpoints", "technology_fingerprint", "cdn_waf_enhanced", "geolocation"
         ]
         
         for name, res in zip(task_names, results_raw):
@@ -277,15 +305,23 @@ class SubdomainIntelligence:
             "ip_intelligence": results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
             "dns_records": results[1] if not isinstance(results[1], Exception) else [],
             "ssl_certificate": results[2] if not isinstance(results[2], Exception) else {"valid": False},
-            "http_headers": results[3] if not isinstance(results[3], Exception) else {},
+            "http_headers": results[3].get("headers") if isinstance(results[3], dict) else results[3],
             "cdn_waf_detection": results[4] if not isinstance(results[4], Exception) else {"detected": []},
             "technology_stack": results[5] if not isinstance(results[5], Exception) else {"technologies": []},
-            "endpoints": results[6] if not isinstance(results[6], Exception) else [],
-            "technology_fingerprint": results[7] if not isinstance(results[7], Exception) else {"technologies": []},
-            "cdn_waf_enhanced": results[8] if not isinstance(results[8], Exception) else {"detected": []},
-            "geolocation": results[9] if not isinstance(results[9], Exception) else {"error": "unresolved"},
+            "http_intelligence": results[6] if not isinstance(results[6], Exception) else {},
+            "endpoints": results[7].get("all_endpoints", []) if isinstance(results[7], dict) else [],
+            "api_endpoints": results[7].get("endpoints_by_source", {}).get("from_javascript", []) if isinstance(results[7], dict) else [],
+            "katana_endpoints": results[8] if isinstance(results[8], list) else [],
+            "technology_fingerprint": results[9] if not isinstance(results[9], Exception) else {"technologies": []},
+            "cdn_waf_enhanced": results[10] if not isinstance(results[10], Exception) else {"detected": []},
+            "geolocation": results[11] if not isinstance(results[11], Exception) else {"error": "unresolved"},
             "last_intelligence_scan": datetime.now().isoformat()
         }
+
+        # Merge Katana and JS API endpoints for UI
+        api_set = set(intel_result.get("api_endpoints", []))
+        api_set.update(intel_result.get("katana_endpoints", []))
+        intel_result["api_endpoints"] = sorted(list(api_set))
 
         # Promote key fields to top-level for UI visibility
         # 1. Technologies list
@@ -295,12 +331,28 @@ class SubdomainIntelligence:
         if isinstance(intel_result["technology_fingerprint"], dict):
             all_techs.update(intel_result["technology_fingerprint"].get("technologies", []))
         
-        intel_result["technologies"] = list(all_techs)
+        intel_result["technologies"] = sorted(list(all_techs))
         intel_result["technologies_found"] = len(all_techs)
 
-        # 2. Status Code (from comprehensive HTTP intelligence if available)
+        # 2. Status Code
         if isinstance(intel_result["http_headers"], dict) and "status_code" in intel_result["http_headers"]:
             intel_result["status_code"] = intel_result["http_headers"]["status_code"]
+
+        # 3. Security & Infrastructure (Promoted for UI)
+        intel_result["waf"] = intel_result["cdn_waf_detection"].get("waf") or intel_result["cdn_waf_enhanced"].get("waf") or "None detected"
+        intel_result["cdn"] = intel_result["cdn_waf_detection"].get("cdn") or intel_result["cdn_waf_enhanced"].get("cdn") or "None detected"
+        
+        ip_intel = intel_result.get("ip_intelligence", {})
+        intel_result["asn"] = ip_intel.get("asn", "Unknown")
+        intel_result["org"] = ip_intel.get("organization", ip_intel.get("isp", "Unknown"))
+        intel_result["country"] = ip_intel.get("country", "Unknown")
+        
+        ssl = intel_result.get("ssl_certificate", {})
+        intel_result["ssl_info"] = {
+            "issuer": ssl.get("issuer", "Unknown"),
+            "valid_until": ssl.get("not_after", "Unknown"),
+            "valid": ssl.get("valid", False)
+        }
 
         return intel_result
     

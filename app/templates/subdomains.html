@@ -161,8 +161,12 @@
 <div id="subdomain-detail-modal" class="subdomain-modal">
     <div class="modal-content" style="max-width: 900px;">
         <div class="modal-header">
-            <h2 id="modal-title" style="margin: 0;">Subdomain Details</h2>
-            <button class="close-btn" onclick="closeDetailModal()">×</button>
+            <div>
+                <h2 id="modal-title" style="margin: 0 0 0.25rem 0; font-size: 1.8rem;">Subdomain Details</h2>
+                <p id="modal-subtitle" style="margin: 0; color: #9ca3af; font-size: 0.9rem;">Loading...</p>
+            </div>
+            <button class="btn btn-outline" onclick="closeDetailModal()"
+                style="padding: 0.5rem 1rem; font-size: 1.2rem; width: auto;">✕ Close</button>
         </div>
         <div class="modal-body" id="modal-detail-body">
             <div class="text-center" style="padding: 3rem;">
@@ -176,7 +180,7 @@
 
 {% block scripts %}
 <style>
-    .subdomain-card {
+    .result-card {
         padding: 1.25rem;
         margin-bottom: 0.75rem;
         background: rgba(255, 255, 255, 0.03);
@@ -184,49 +188,53 @@
         border-left: 4px solid var(--primary);
         cursor: pointer;
         transition: all var(--transition-fast);
+        position: relative;
     }
 
-    .subdomain-card:hover {
+    .result-card:hover {
         background: rgba(255, 255, 255, 0.05);
         transform: translateX(4px);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
-    .subdomain-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 0.75rem;
-    }
-
-    .subdomain-domain {
+    .result-title {
         font-size: 1.1rem;
         font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .result-url {
+        font-size: 0.9rem;
         color: var(--primary);
         word-break: break-all;
+        margin-bottom: 0.75rem;
         font-family: 'JetBrains Mono', monospace;
     }
 
-    .subdomain-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1rem;
+    .result-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.75rem;
         font-size: 0.85rem;
         color: var(--text-secondary);
-    }
-
-    .meta-item {
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 0.75rem;
+        border-radius: 6px;
     }
 
     .tech-badge {
         display: inline-block;
         padding: 0.25rem 0.5rem;
-        background: rgba(59, 130, 246, 0.2);
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.3);
         border-radius: 4px;
         font-size: 0.7rem;
+        color: #60a5fa;
         margin-right: 0.25rem;
         margin-bottom: 0.25rem;
     }
@@ -261,11 +269,10 @@
         top: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(10px);
-        align-items: center;
-        justify-content: center;
-        padding: 2rem;
+        background: linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
+        backdrop-filter: blur(16px);
+        flex-direction: column;
+        overflow: hidden;
     }
 
     .subdomain-modal.active {
@@ -273,26 +280,31 @@
     }
 
     .modal-content {
-        background: var(--glass-bg);
-        backdrop-filter: blur(16px);
-        border: 1px solid var(--glass-border);
-        border-radius: var(--radius-lg);
-        max-height: 90vh;
-        overflow-y: auto;
-        width: 90%;
-        max-width: 900px;
+        background: transparent;
+        width: 100%;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100vh;
+        border: none;
+        border-radius: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
     }
 
     .modal-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1.5rem;
-        border-bottom: 1px solid var(--glass-border);
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+        flex-shrink: 0;
     }
 
     .modal-body {
-        padding: 1.5rem;
+        padding: 2rem;
+        flex: 1;
+        overflow-y: auto;
     }
 
     .close-btn {
@@ -315,21 +327,28 @@
         position: relative;
     }
 
+    .hidden {
+        display: none !important;
+    }
+
     .detail-tabs {
         display: flex;
         gap: 0.5rem;
-        margin-bottom: 1rem;
-        border-bottom: 1px solid var(--glass-border);
+        padding: 0 2rem 1.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        overflow-x: auto;
+        margin-bottom: 2rem;
     }
 
     .detail-tab {
-        padding: 0.75rem 1rem;
         background: none;
         border: none;
         color: var(--text-muted);
         cursor: pointer;
         border-bottom: 2px solid transparent;
         transition: all var(--transition-fast);
+        padding: 0.75rem 1rem;
+        /* Added this back from original .detail-tab */
     }
 
     .detail-tab.active {
@@ -517,32 +536,35 @@
 
     // Create subdomain card HTML
     function createSubdomainCard(sub) {
-        const statusClass = `status-badge-${sub.status_code || '000'}`;
-        const statusText = sub.status_code || 'No Response';
+        const statusCode = sub.status_code || sub.http_intelligence?.status_code || '---';
+        const ip = sub.primary_ip || sub.ip || '---';
+        const source = getSourceLabel(sub.source);
+        const techs = sub.technologies || [];
 
         return `
-            <div class="subdomain-card" onclick="viewSubdomainDetails('${sub.domain}')">
-                <div class="subdomain-header">
-                    <div>
-                        <div class="subdomain-domain">${sub.domain}</div>
-                        <div class="subdomain-meta">
-                            <div class="meta-item">
-                                <span class="badge ${statusClass}">${statusText}</span>
-                            </div>
-                            ${sub.ip ? `<div class="meta-item">🖥️ ${sub.ip}</div>` : ''}
-                            ${sub.source ? `<div class="meta-item">📡 ${getSourceLabel(sub.source)}</div>` : ''}
-                        </div>
-                    </div>
-                    <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); window.open('https://${sub.domain}', '_blank')" style="padding: 0.5rem 1rem;">
-                        🔗 Visit
-                    </button>
+            <div class="result-card" onclick="viewSubdomainDetails('${sub.domain}')">
+                <div class="result-title">
+                    <span class="tag ${statusCode >= 200 && statusCode < 400 ? 'tag-tech' : 'tag-danger'}" style="margin-right: 0.5rem;">
+                        ${statusCode}
+                    </span>
+                    ${sub.domain}
+                    <span class="batch-badge" style="font-size: 0.7rem; opacity: 0.7;">via ${source}</span>
                 </div>
-                ${sub.technologies && sub.technologies.length > 0 ? `
-                    <div style="margin-top: 0.75rem;">
-                        ${sub.technologies.slice(0, 5).map(tech => `<span class="tech-badge">${tech}</span>`).join('')}
-                        ${sub.technologies.length > 5 ? `<span class="tech-badge">+${sub.technologies.length - 5} more</span>` : ''}
-                    </div>
-                ` : ''}
+                
+                <div style="margin-bottom: 0.5rem;">
+                    ${techs.slice(0, 8).map(t => `<span class="tech-badge">${t}</span>`).join('')}
+                    ${techs.length > 8 ? `<span class="tech-badge" style="opacity: 0.6;">+${techs.length - 8} more</span>` : ''}
+                </div>
+
+                <div class="result-url">
+                    <a href="https://${sub.domain}" target="_blank" onclick="event.stopPropagation()" style="color: var(--primary); text-decoration: underline;">https://${sub.domain}</a>
+                </div>
+
+                <div class="result-meta">
+                    <div><strong>IP Address:</strong> ${ip}</div>
+                    <div><strong>Discovery:</strong> ${source}</div>
+                    <div><strong>Captured:</strong> ${new Date(sub.timestamp || Date.now()).toLocaleDateString()}</div>
+                </div>
             </div>
         `;
     }
@@ -564,8 +586,10 @@
         const modalBody = document.getElementById('modal-detail-body');
         const modalTitle = document.getElementById('modal-title');
 
+        currentDetailDomain = domain;
         modalTitle.innerText = domain;
         modal.classList.add('active');
+        document.body.classList.add('modal-open');
 
         modalBody.innerHTML = '<div class="text-center" style="padding: 3rem;"><div class="spinner"></div><p>Loading details...</p></div>';
 
@@ -581,6 +605,14 @@
         } catch (err) {
             modalBody.innerHTML = `<div style="color: var(--danger); padding: 2rem;">Error: ${err.message}</div>`;
         }
+    }
+
+    // Add closeDetailModal logic update to clear interval
+    function closeDetailModal() {
+        document.getElementById('subdomain-detail-modal').classList.remove('active');
+        document.body.classList.remove('modal-open');
+        if (subdomainLogInterval) clearInterval(subdomainLogInterval);
+        currentDetailDomain = null;
     }
 
     // Fuzzing State
@@ -683,39 +715,49 @@
     // Render subdomain details in modal
     function renderSubdomainDetails(details) {
         const modalBody = document.getElementById('modal-detail-body');
+        const modalTitle = document.getElementById('modal-title');
+        const modalSubtitle = document.getElementById('modal-subtitle');
+
+        if (modalTitle) modalTitle.innerText = details.domain || 'Subdomain Details';
+        if (modalSubtitle) modalSubtitle.innerText = 'Subdomain Intelligence & Vulnerability Surface';
 
         modalBody.innerHTML = `
             <div class="detail-tabs">
                 <button class="detail-tab active" onclick="switchTab(event, 'overview')">Overview</button>
+                <button class="detail-tab" onclick="switchTab(event, 'headers')">Headers</button>
                 <button class="detail-tab" onclick="switchTab(event, 'technologies')">Technologies</button>
+                <button class="detail-tab" onclick="switchTab(event, 'endpoints')">Endpoints</button>
+                <button class="detail-tab" onclick="switchTab(event, 'apis')">APIs</button>
                 <button class="detail-tab" onclick="switchTab(event, 'security')">Security</button>
                 <button class="detail-tab" onclick="switchTab(event, 'fuzzing')">Fuzzing</button>
+                <button class="detail-tab" onclick="switchTab(event, 'logs')">Logs</button>
             </div>
 
             <div id="tab-overview" class="tab-content">
-                <div class="grid-2" style="gap: 1rem;">
+                <div class="grid-2" style="gap: 1.5rem;">
                     <div>
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-muted);">Domain</h4>
-                        <p style="font-family: 'JetBrains Mono', monospace;">${details.domain || 'N/A'}</p>
+                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Infrastructure</h4>
+                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;">
+                            <div style="margin-bottom: 0.4rem;"><strong>Domain:</strong> ${details.domain}</div>
+                            <div style="margin-bottom: 0.4rem;"><strong>IP:</strong> ${details.ip || details.primary_ip || 'N/A'}</div>
+                            <div style="margin-bottom: 0.4rem;"><strong>ASN:</strong> ${details.asn || 'N/A'}</div>
+                            <div style="margin-bottom: 0.4rem;"><strong>Org:</strong> ${details.org || 'N/A'}</div>
+                        </div>
                     </div>
                     <div>
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-muted);">IP Address</h4>
-                        <p>${details.ip || 'N/A'}</p>
-                    </div>
-                    <div>
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-muted);">Status Code</h4>
-                        <p>${details.status_code || 'No Response'}</p>
-                    </div>
-                    <div>
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-muted);">Response Time</h4>
-                        <p>${details.response_time_ms ? details.response_time_ms + ' ms' : 'N/A'}</p>
+                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Performance</h4>
+                        <div style="font-size: 0.9rem;">
+                            <div style="margin-bottom: 0.4rem;"><strong>Status:</strong> <span class="badge ${details.status_code === 200 ? 'badge-success' : 'badge-warning'}">${details.status_code || 'No Response'}</span></div>
+                            <div style="margin-bottom: 0.4rem;"><strong>Latent:</strong> ${details.response_time_ms ? details.response_time_ms + ' ms' : 'N/A'}</div>
+                            <div style="margin-bottom: 0.4rem;"><strong>CDN:</strong> ${details.cdn || 'None detected'}</div>
+                        </div>
                     </div>
                 </div>
 
                 ${details.title ? `
-                    <div style="margin-top: 1rem;">
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-muted);">Page Title</h4>
-                       <p>${details.title}</p>
+                    <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Page Analysis</h4>
+                        <p style="font-size: 1.1rem; font-weight: 500;">${details.title}</p>
                     </div>
                 ` : ''}
 
@@ -723,26 +765,72 @@
                     <button onclick="window.open('https://${details.domain}', '_blank')" class="btn btn-primary">
                         Visit Website →
                     </button>
+                    ${(!details.status_code || details.status_code === 'No Response') ? `
+                        <button id="trigger-scan-btn" onclick="triggerIntelligenceScan('${details.domain}')" class="btn btn-outline" style="border-color: #60a5fa; color: #60a5fa;">
+                            🚀 Trigger Intelligence Scan
+                        </button>
+                    ` : ''}
                 </div>
+            </div>
+
+            <div id="tab-logs" class="tab-content hidden">
+                <div class="flex-between mb-md">
+                    <h3 style="margin:0;">Live Progress Logs</h3>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">Showing activity for: <strong>${details.domain}</strong></div>
+                </div>
+                <div id="subdomain-log-container" style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; height: 350px; overflow-y: auto; color: #a1a1aa; line-height: 1.5;">
+                    <p style="text-align: center; padding-top: 100px;">Initializing log stream...</p>
+                </div>
+            </div>
+
+            <div id="tab-headers" class="tab-content hidden">
+                ${details.http_headers ? `
+                    <div class="code-block" style="background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.6; max-height: 400px; overflow-y: auto;">
+                        ${Object.entries(details.http_headers).map(([k, v]) => `<div style="margin-bottom: 0.2rem;"><span style="color: #60a5fa;">${k}:</span> <span style="color: #e5e7eb;">${v}</span></div>`).join('')}
+                    </div>
+                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No HTTP headers available.</p>'}
             </div>
 
             <div id="tab-technologies" class="tab-content hidden">
                 ${details.technologies && details.technologies.length > 0 ? `
-                    <div>
-                        ${details.technologies.map(tech => `<span class="tech-badge">${tech}</span>`).join('')}
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; padding: 1rem;">
+                        ${details.technologies.map(tech => `<span class="tech-tag" style="background: rgba(96, 165, 250, 0.1); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.2); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 500;">${tech}</span>`).join('')}
                     </div>
-                ` : '<p style="color: var(--text-muted);">No technologies detected</p>'}
+                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No technologies detected yet.</p>'}
+            </div>
+
+            <div id="tab-endpoints" class="tab-content hidden">
+                ${details.endpoints && details.endpoints.length > 0 ? `
+                    <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; max-height: 400px; overflow-y: auto;">
+                        ${details.endpoints.map(e => `<div style="margin-bottom: 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.3rem;">${e}</div>`).join('')}
+                    </div>
+                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No crawled endpoints discovered.</p>'}
+            </div>
+
+            <div id="tab-apis" class="tab-content hidden">
+                ${details.api_endpoints && details.api_endpoints.length > 0 ? `
+                    <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; max-height: 400px; overflow-y: auto;">
+                        ${details.api_endpoints.map(e => `<div style="margin-bottom: 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #60a5fa; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.3rem;">${e}</div>`).join('')}
+                    </div>
+                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No API endpoints identified yet.</p>'}
             </div>
 
             <div id="tab-security" class="tab-content hidden">
-                <div class="grid-2" style="gap: 1rem;">
+                <div class="grid-2" style="gap: 1.5rem;">
                     <div>
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-muted);">WAF Detected</h4>
-                        <p>${details.waf || 'None detected'}</p>
+                        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Security Shield</h4>
+                        <div style="font-size: 0.9rem;">
+                            <div style="margin-bottom: 0.6rem;"><strong>WAF:</strong> <span style="color: ${details.waf === 'None detected' ? '#9ca3af' : '#fbbf24'};">${details.waf}</span></div>
+                            <div style="margin-bottom: 0.6rem;"><strong>SSL Status:</strong> <span style="color: ${details.ssl_info?.valid ? '#34d399' : '#f87171'};">${details.ssl_info?.valid ? 'Secure/Valid' : 'Insecure/Invalid'}</span></div>
+                            <div style="margin-bottom: 0.6rem;"><strong>SSL Issuer:</strong> ${details.ssl_info?.issuer || 'Unknown'}</div>
+                            <div style="margin-bottom: 0.6rem;"><strong>SSL Expiry:</strong> ${details.ssl_info?.valid_until || 'Unknown'}</div>
+                        </div>
                     </div>
                     <div>
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem; color: var(--text-muted);">SSL/TLS</h4>
-                        <p>${details.jarm_hash ? 'Enabled' : 'Unknown'}</p>
+                        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">DNS Records</h4>
+                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 4px; max-height: 200px; overflow-y: auto;">
+                            ${details.dns_records ? Object.entries(details.dns_records).filter(([k, v]) => v && v.length > 0).map(([k, v]) => `<div><strong style="color: #60a5fa;">${k}:</strong> ${v.join(', ')}</div>`).join('\n') : 'No DNS records found'}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -750,14 +838,14 @@
             <div id="tab-fuzzing" class="tab-content hidden">
                 <div class="flex-between mb-md">
                     <h3 style="margin:0;">Directory Fuzzing</h3>
-                    <button id="fuzz-btn" class="btn btn-outline" onclick="toggleFuzzing('${details.domain}')" data-running="false">
-                        Start Fuzzing
+                    <button id="fuzz-btn" class="btn btn-outline" onclick="toggleFuzzing('${details.domain}')" data-running="false" style="border-color: #60a5fa; color: #60a5fa;">
+                        🚀 Start Directory Build-out
                     </button>
                 </div>
-                <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 4px;">
-                    <h4 style="margin-top: 0; font-size: 0.85rem; color: var(--text-muted);">Discovered Paths</h4>
-                    <div id="fuzz-results-container" class="fuzz-result-list">
-                        <p style="text-align: center; color: var(--text-muted);">Click Start to begin directory brute-forcing...</p>
+                <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 12px;">
+                    <h4 style="margin-top: 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Discovered Sensitive Paths</h4>
+                    <div id="fuzz-results-container" class="fuzz-result-list" style="margin-top: 1rem; min-height: 200px; display: flex; flex-direction: column; justify-content: center;">
+                        <p style="text-align: center; color: var(--text-muted);">Launch directory brute-forcing to discover hidden files and folders.</p>
                     </div>
                 </div>
             </div>
@@ -766,14 +854,100 @@
     }
 
     // Switch tabs in modal
+    let subdomainLogInterval = null;
+    let currentDetailDomain = null;
+
     function switchTab(e, tabName) {
+        if (e) e.preventDefault();
+        const target = e ? e.currentTarget : document.querySelector(`.detail-tab[onclick*="${tabName}"]`);
+
+        console.log(`Switching to tab: ${tabName}`);
+
         // Remove active from all tabs
         document.querySelectorAll('.detail-tab').forEach(tab => tab.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+        // Hide all tab content
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+            content.style.display = 'none';
+        });
 
         // Activate clicked tab
-        e.target.classList.add('active');
-        document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+        if (target) target.classList.add('active');
+
+        const contentPanel = document.getElementById(`tab-${tabName}`);
+        if (contentPanel) {
+            contentPanel.classList.remove('hidden');
+            contentPanel.style.display = 'block';
+            console.log(`Showing panel: tab-${tabName}`);
+        } else {
+            console.error(`Panel not found: tab-${tabName}`);
+        }
+
+        // Handle Logs Tab Polling
+        if (subdomainLogInterval) clearInterval(subdomainLogInterval);
+        if (tabName === 'logs' && currentDetailDomain) {
+            pollSubdomainLogs(currentDetailDomain);
+            subdomainLogInterval = setInterval(() => pollSubdomainLogs(currentDetailDomain), 2000);
+        }
+    }
+
+    async function pollSubdomainLogs(domain) {
+        const container = document.getElementById('subdomain-log-container');
+        if (!container) return;
+
+        try {
+            const res = await fetch('/get_logs');
+            const logs = await res.json();
+
+            // Filter logs mentioning the domain
+            const filtered = logs.filter(line => line.toLowerCase().includes(domain.toLowerCase()));
+
+            if (filtered.length > 0) {
+                container.innerHTML = filtered.map(line => `<div style="margin-bottom: 2px;">${escapeHtml(line)}</div>`).join('');
+                container.scrollTop = container.scrollHeight;
+            } else {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding-top: 100px;">No specific logs found for this subdomain yet...</p>';
+            }
+        } catch (e) {
+            console.error("Log fetch error:", e);
+        }
+    }
+
+    async function triggerIntelligenceScan(domain) {
+        const btn = document.getElementById('trigger-scan-btn');
+        if (!confirm(`Start deep intelligence gathering for ${domain}?`)) return;
+
+        try {
+            btn.disabled = true;
+            btn.innerText = '⌛ Starting...';
+
+            const res = await fetch('/subdomains/trigger_scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain: domain })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                btn.innerText = '🚀 Scan Progressive';
+                // Switch to logs tab to show progress
+                const logsTab = Array.from(document.querySelectorAll('.detail-tab')).find(t => t.innerText.includes('Logs'));
+                if (logsTab) logsTab.click();
+            } else {
+                alert('Error: ' + data.error);
+                btn.disabled = false;
+                btn.innerText = '🚀 Trigger Intelligence Scan';
+            }
+        } catch (e) {
+            alert('Request failed');
+            btn.disabled = false;
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // Close detail modal

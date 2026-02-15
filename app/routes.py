@@ -336,16 +336,20 @@ def search_title():
                 safe_query = re.escape(query)
                 mongo_query_ip = {"ip": {"$regex": safe_query, "$options": "i"}}
             
-            # 3. Search subdomains (for Phase 2 enhanced intelligence data)
-            mongo_query_subdomains = {}
+            # 3. Search subdomains (ONLY completed scans with intelligence)
+            mongo_query_subdomains = {
+                "$and": [
+                    {"$or": [{"status_code": {"$exists": True}}, {"last_intelligence_scan": {"$exists": True}}]}
+                ]
+            }
             if query:
                 safe_query = re.escape(query)
-                mongo_query_subdomains = {
+                mongo_query_subdomains["$and"].append({
                     "$or": [
                         {"domain": {"$regex": safe_query, "$options": "i"}},
                         {"primary_ip": {"$regex": safe_query, "$options": "i"}}
                     ]
-                }
+                })
             
             cursor_extract = current_app.db.extraction_results.find(mongo_query_extract)
             extract_results = list(cursor_extract)
@@ -516,6 +520,44 @@ def get_subdomain_details(scan_id, domain):
         return jsonify({"success": True, "details": details})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@main_bp.route("/subdomains/trigger_scan", methods=["POST"])
+@api_error_handler
+def trigger_scan():
+    """Manually trigger intelligence gathering for a specific domain."""
+    data = request.get_json()
+    domain = data.get("domain")
+    if not domain:
+        return jsonify({"success": False, "error": "No domain provided"}), 400
+
+    from .core.advanced_recon import AdvancedRecon
+    from .core.core import log_event
+    import threading
+    from datetime import datetime
+
+    def run_deep_scan(target_domain):
+        recon = AdvancedRecon()
+        log_event(f"🚀 Manual intelligence gathering started for {target_domain}")
+        # Run intelligence gathering
+        results = recon.gather_intelligence(target_domain)
+        # Store results
+        if results:
+            current_app.db.subdomains.update_one(
+                {"domain": target_domain},
+                {"$set": results, "$set": {"last_intelligence_scan": datetime.now().isoformat()}},
+                upsert=True
+            )
+            log_event(f"✅ Intelligence gathering completed for {target_domain}")
+        else:
+            log_event(f"⚠️ Intelligence gathering failed for {target_domain}")
+
+    # Start in background thread
+    thread = threading.Thread(target=run_deep_scan, args=(domain,))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"success": True, "message": f"Scan started for {domain}"})
 
 
 # ── Jobs ──────────────────────────────────────────────────────────
