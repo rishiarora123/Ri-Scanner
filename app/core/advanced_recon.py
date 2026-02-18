@@ -357,13 +357,28 @@ class SubdomainIntelligence:
         intel_result["confidence_scores"] = confidence_scores
         intel_result["technologies_found"] = len(all_techs)
 
-        # 2. Status Code
-        if isinstance(intel_result["http_headers"], dict) and "status_code" in intel_result["http_headers"]:
+        # 2. Status Code - Prefer HTTPIntelligence (GET) results
+        if isinstance(intel_result.get("http_intelligence"), dict) and intel_result["http_intelligence"].get("status_code"):
+            intel_result["status_code"] = intel_result["http_intelligence"]["status_code"]
+        elif isinstance(intel_result.get("http_headers"), dict) and "status_code" in intel_result["http_headers"]:
             intel_result["status_code"] = intel_result["http_headers"]["status_code"]
 
         # 3. Security & Infrastructure (Promoted for UI)
-        intel_result["waf"] = intel_result["cdn_waf_detection"].get("waf") or intel_result["cdn_waf_enhanced"].get("waf") or "None detected"
-        intel_result["cdn"] = intel_result["cdn_waf_detection"].get("cdn") or intel_result["cdn_waf_enhanced"].get("cdn") or "None detected"
+        waf_detected = intel_result["cdn_waf_detection"].get("waf") or "None detected"
+        cdn_detected = intel_result["cdn_waf_detection"].get("cdn") or "None detected"
+        
+        # Merge with enhanced detection if available
+        if isinstance(intel_result.get("cdn_waf_enhanced"), dict):
+            enhanced = intel_result["cdn_waf_enhanced"].get("waf_detection", {}).get("detected", [])
+            if enhanced:
+                waf_detected = ", ".join(enhanced)
+            
+            enhanced_cdn = intel_result["cdn_waf_enhanced"].get("cdn_detection", {}).get("detected", [])
+            if enhanced_cdn:
+                cdn_detected = ", ".join(enhanced_cdn)
+
+        intel_result["waf"] = waf_detected
+        intel_result["cdn"] = cdn_detected
         
         # Prefer Geolocation module data for ASN/Org/Country
         geo = intel_result.get("geolocation", {}).get("geolocation") or {}
@@ -374,18 +389,38 @@ class SubdomainIntelligence:
         intel_result["country"] = geo.get("country") or ip_intel.get("country", "Unknown")
         intel_result["city"] = geo.get("city") or "Unknown"
         
-        ssl = intel_result.get("ssl_certificate", {})
+        ssl_data = intel_result.get("ssl_certificate", {})
+        # Format SSL issuer for readability (Issue 6)
+        issuer_raw = ssl_data.get("issuer", "")
+        issuer_fmt = "Unknown"
+        if issuer_raw and isinstance(issuer_raw, str):
+            # Attempt to extract CN and O
+            cn_match = re.search(r"commonName', '([^']+)'", issuer_raw)
+            o_match = re.search(r"organizationName', '([^']+)'", issuer_raw)
+            if cn_match and o_match:
+                issuer_fmt = f"{o_match.group(1)} ({cn_match.group(1)})"
+            elif cn_match:
+                issuer_fmt = cn_match.group(1)
+            elif o_match:
+                issuer_fmt = o_match.group(1)
+            else:
+                issuer_fmt = issuer_raw.replace("((", "").replace("))", "").split("), (")[0] # fallback
+
         intel_result["ssl_info"] = {
-            "issuer": ssl.get("issuer", "Unknown"),
-            "valid_until": ssl.get("not_after", "Unknown"),
-            "valid": ssl.get("valid", False)
+            "issuer": issuer_fmt,
+            "valid_until": ssl_data.get("not_after", "Unknown"),
+            "valid": ssl_data.get("valid", False)
         }
 
-        # Consolidate Headers & Security Headers for UI
+        # Consolidate Headers & Security Headers for UI (Issue 2)
         http_intel = intel_result.get("http_intelligence", {})
-        if not intel_result.get("http_headers") and http_intel.get("headers_raw"):
-            intel_result["http_headers"] = http_intel["headers_raw"]
+        full_headers = {}
+        if isinstance(intel_result.get("http_headers"), dict):
+            full_headers.update(intel_result["http_headers"])
+        if http_intel.get("headers_raw"):
+            full_headers.update(http_intel["headers_raw"])
         
+        intel_result["http_headers"] = full_headers
         intel_result["security_headers"] = http_intel.get("security_headers") or {}
         intel_result["tech_indicators"] = http_intel.get("tech_indicators") or {}
 

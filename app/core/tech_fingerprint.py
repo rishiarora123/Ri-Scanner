@@ -19,46 +19,57 @@ class TechFingerprint:
     # Signature patterns for common technologies
     SIGNATURES = {
         "Frameworks": {
-            "React": [r"/__REACT_DEVTOOLS_GLOBAL_HOOK__", r"react\.production\.min\.js"],
-            "Vue.js": [r"__vue__", r"vue\.min\.js", r"v-app"],
-            "Angular": [r"ng-app", r"data-ng-", r"angular\.min\.js"],
-            "Django": [r"csrfmiddlewaretoken", r"Django/"],
-            "Flask": [r"flask", r"werkzeug"],
-            "Next.js": [r"__NEXT_", r"_next/static"],
-            "Laravel": [r"XSRF-TOKEN", r"laravel"],
-            "Spring": [r"spring-webmvc", r"org/springframework"],
+            "React": [r"/__REACT_DEVTOOLS_GLOBAL_HOOK__", r"react\.production\.min\.js", r"react-root", r"ReactDOM"],
+            "Vue.js": [r"__vue__", r"vue\.min\.js", r"v-app", r"vue-js"],
+            "Angular": [r"ng-app", r"data-ng-", r"angular\.min\.js", r"ng-binding", r"ng-scope"],
+            "Django": [r"csrfmiddlewaretoken", r"Django/", r"django-debug-toolbar"],
+            "Flask": [r"flask", r"werkzeug", r"flask-socketio"],
+            "Next.js": [r"__NEXT_", r"_next/static", r"next-route-announcer"],
+            "Laravel": [r"XSRF-TOKEN", r"laravel_session", r"Laravel"],
+            "Spring Boot": [r"spring-webmvc", r"org.springframework", r"JSESSIONID"],
+            "Ruby on Rails": [r"rails", r"X-Runtime", r"csrf-param"],
+            "Express": [r"X-Powered-By: Express", r"express\.js"],
+            "Svelte": [r"svelte-", r"__svelte"],
         },
         "Server Software": {
-            "Apache": [r"Apache"],
-            "Nginx": [r"nginx"],
-            "IIS": [r"IIS/"],
-            "Tomcat": [r"Tomcat/"],
-            "Node.js": [r"Express", r"node"],
-            "Gunicorn": [r"gunicorn"],
+            "Apache": [r"Apache", r"Apache/2", r"mod_ssl"],
+            "Nginx": [r"nginx", r"nginx/1"],
+            "Microsoft IIS": [r"IIS/", r"Microsoft-IIS"],
+            "LiteSpeed": [r"LiteSpeed"],
+            "Cloudflare Server": [r"cloudflare"],
+            "Traefik": [r"traefik"],
+            "Haproxy": [r"haproxy"],
+            "OpenResty": [r"openresty"],
         },
         "CMS": {
-            "WordPress": [r"wp-content", r"wp-includes", r"wordpress"],
-            "Joomla": [r"joomla", r"/images/logo\.png"],
-            "Drupal": [r"drupal\.org", r"sites/all"],
-            "Magento": [r"magento", r"skin/frontend"],
-            "Shopify": [r"Shopify\.shop", r"cdn/shop"],
+            "WordPress": [r"wp-content", r"wp-includes", r"wordpress", r"wp-json"],
+            "Joomla": [r"joomla", r"/images/logo\.png", r"com_content"],
+            "Drupal": [r"drupal\.org", r"sites/all", r"Drupal"],
+            "Magento": [r"magento", r"skin/frontend", r"Mage.Cookies"],
+            "Shopify": [r"Shopify\.shop", r"cdn/shop", r"shopify-payment-button"],
+            "Ghost": [r"Ghost", r"ghost-version"],
         },
         "JavaScript Libraries": {
-            "jQuery": [r"jquery\.min\.js", r"\$\.noConflict"],
-            "Bootstrap": [r"bootstrap\.min\.css", r"bs-navbar"],
-            "Font Awesome": [r"fontawesome", r"font-awesome"],
-            "Modernizr": [r"modernizr"],
+            "jQuery": [r"jquery\.min\.js", r"\$\.noConflict", r"jQuery\."],
+            "Bootstrap": [r"bootstrap\.min\.css", r"bs-navbar", r"bootstrap\.js"],
+            "Font Awesome": [r"fontawesome", r"font-awesome", r"fa-"],
+            "Axios": [r"axios", r"axios\.min\.js"],
+            "Lodash": [r"_\.", r"lodash"],
             "Moment.js": [r"moment\.min\.js"],
+            "Three.js": [r"three\.js", r"three\.min\.js"],
         },
         "Analytics": {
-            "Google Analytics": [r"google-analytics\.com", r"gtag\.js", r"GA_ID"],
+            "Google Analytics": [r"google-analytics\.com", r"gtag\.js", r"UA-", r"G-"],
             "Mixpanel": [r"mixpanel\.com"],
             "Segment": [r"segment\.com"],
             "Hotjar": [r"hotjar\.com"],
+            "GTM": [r"googletagmanager\.com", r"GTM-"],
         },
         "Security": {
-            "reCAPTCHA": [r"recaptcha", r"_gat"],
-            "Cloudflare": [r"cdn-cgi", r"__cfduid"],
+            "reCAPTCHA": [r"recaptcha", r"g-recaptcha"],
+            "Cloudflare": [r"cdn-cgi", r"__cfduid", r"cf-ray"],
+            "Akamai": [r"akamai", r"akamai-hd"],
+            "Imperva": [r"incap_ses", r"visid_incap"],
         }
     }
     
@@ -113,19 +124,31 @@ class TechFingerprint:
                     return cat
             return "Other"
 
+        # Weights: 
+        # Headers/Cookies/Meta: 2 points (High fidelity)
+        # HTML/JS patterns: 1 point (Lower fidelity)
+        source_weights = {
+            "from_headers": 2.0,
+            "from_cookies": 2.0,
+            "from_meta": 1.5,
+            "from_html": 1.0,
+            "from_javascript": 1.0
+        }
+
         for source, techs in results.items():
             if source != "confidence" and isinstance(techs, list):
+                weight = source_weights.get(source, 1.0)
                 for tech in techs:
                     if tech not in all_techs:
-                        all_techs[tech] = 0
+                        all_techs[tech] = 0.0
                         tech_to_category[tech] = _get_category(tech)
-                    all_techs[tech] += 1
+                    all_techs[tech] += weight
         
-        # Assign confidence
-        for tech, count in all_techs.items():
-            if count >= 3:
+        # Assign confidence based on total weight
+        for tech, score in all_techs.items():
+            if score >= 3.0:
                 confidence = "high"
-            elif count >= 2:
+            elif score >= 2.0:
                 confidence = "medium"
             else:
                 confidence = "low"

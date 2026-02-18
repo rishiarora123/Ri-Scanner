@@ -25,6 +25,7 @@ class EndpointDiscovery:
         all_endpoints = {
             "from_robots_txt": await self.parse_robots_txt(domain),
             "from_sitemap": await self.parse_sitemap_xml(domain),
+            "from_wayback": await self.discover_from_wayback(domain),
             "from_javascript": await self.extract_api_from_js(domain),
             "from_common_paths": await self.probe_common_paths(domain),
             "well_known": await self.discover_well_known(domain),
@@ -41,6 +42,29 @@ class EndpointDiscovery:
             "endpoints_by_source": all_endpoints,
             "all_endpoints": sorted(list(all_found))
         }
+
+    async def discover_from_wayback(self, domain: str) -> List[str]:
+        """Fetch historical URLs from the Wayback Machine API"""
+        endpoints = set()
+        try:
+            url = f"https://web.archive.org/cdx/search/cdx?url=*.{domain}/*&output=json&collapse=urlkey&fl=original&limit=1000"
+            async with httpx.AsyncClient(timeout=10, verify=False, headers=DEFAULT_HEADERS) as client:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    # Skip the first row (headers)
+                    for row in data[1:]:
+                        full_url = row[0]
+                        # Extract the path from the URL
+                        path = full_url.replace(f"https://{domain}", "").replace(f"http://{domain}", "")
+                        if path.startswith("//"):
+                            # Handle cases where domain replacement leaves //
+                            path = "/" + "/".join(path.split("/")[2:])
+                        if path and path != "/" and "web.archive.org" not in path:
+                            endpoints.add(path)
+        except Exception:
+            pass
+        return sorted(list(endpoints))
     
     async def parse_robots_txt(self, domain: str) -> List[str]:
         """Extract paths from robots.txt"""
@@ -104,8 +128,8 @@ class EndpointDiscovery:
         return endpoints
     
     async def extract_api_from_js(self, domain: str) -> List[str]:
-        """Extract API endpoints from JavaScript files"""
-        api_endpoints = []
+        """Extract API endpoints from JavaScript files with increased depth (Issue 5)"""
+        api_endpoints = set()
         
         try:
             async with httpx.AsyncClient(timeout=10, verify=False, headers=DEFAULT_HEADERS) as client:
@@ -115,14 +139,16 @@ class EndpointDiscovery:
             # Find all script sources
             script_urls = re.findall(r'<script[^>]*src=["\']([^"\']+)["\']', html)
             
-            for script_url in script_urls[:5]:  # Limit to first 5 scripts
+            # Increased limit to 20 (Issue 5)
+            for script_url in script_urls[:20]:
                 # Make absolute URL
                 full_url = urljoin(f"https://{domain}", script_url)
                 
                 try:
                     async with httpx.AsyncClient(timeout=5, verify=False, headers=DEFAULT_HEADERS) as client:
                         js_response = await client.get(full_url)
-                        js_code = js_response.text[:50000]  # Limit to 50KB
+                        # Increased size limit to 200KB (Issue 5)
+                        js_code = js_response.text[:200000]
                         
                         # Look for API patterns
                         patterns = [
@@ -131,11 +157,17 @@ class EndpointDiscovery:
                             r'["\']\/v\d+\/[a-zA-Z0-9/_\-\.]*["\']',
                             r'["\']\/graphql["\']',
                             r'fetch\(["\']([^"\']+)["\']',
+                            r'axios\.(?:get|post|put|delete)\(["\']([^"\']+)["\']',
+                            r'\.ajax\({url: ?["\']([^"\']+)["\']',
+                            r'endpoint: ?["\']([^"\']+)["\']',
                         ]
                         
                         for pattern in patterns:
                             matches = re.findall(pattern, js_code)
-                            api_endpoints.extend(matches)
+                            for m in matches:
+                                m = m.strip('"\'')
+                                if m and len(m) > 1 and not m.startswith('http'):
+                                    api_endpoints.add(m)
                 
                 except Exception:
                     continue
@@ -143,7 +175,7 @@ class EndpointDiscovery:
         except Exception:
             pass
         
-        return list(set(api_endpoints))  # Deduplicate
+        return sorted(list(api_endpoints))
     
     async def probe_common_paths(self, domain: str) -> List[Dict]:
         """Light fuzzing of common endpoints (SAFE wordlist only)"""

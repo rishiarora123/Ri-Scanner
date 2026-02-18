@@ -699,8 +699,8 @@
             } catch (e) { alert('Failed to stop'); }
         } else {
             // Start
-            const wordlist = prompt("Enter wordlist path (leave empty for default):");
-            if (wordlist === null) return;
+            const wordlistSelect = document.getElementById('fuzz-wordlist-select');
+            const selectedWordlist = wordlistSelect ? wordlistSelect.value : null;
 
             try {
                 btn.innerText = 'Starting...';
@@ -708,7 +708,7 @@
                 const res = await fetch(`/fuzzing/start/${scanId}/${domain}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ wordlist: wordlist || null })
+                    body: JSON.stringify({ wordlist: selectedWordlist || null })
                 });
                 const data = await res.json();
 
@@ -796,14 +796,13 @@
 
         modalBody.innerHTML = `
             <div class="detail-tabs">
-                <button class="detail-tab active" onclick="switchTab(event, 'overview')">Overview</button>
-                <button class="detail-tab" onclick="switchTab(event, 'headers')">Headers</button>
-                <button class="detail-tab" onclick="switchTab(event, 'technologies')">Technologies</button>
-                <button class="detail-tab" onclick="switchTab(event, 'endpoints')">Endpoints</button>
-                <button class="detail-tab" onclick="switchTab(event, 'apis')">APIs</button>
-                <button class="detail-tab" onclick="switchTab(event, 'security')">Security</button>
-                <button class="detail-tab" onclick="switchTab(event, 'fuzzing')">Fuzzing</button>
-                <button class="detail-tab" onclick="switchTab(event, 'logs')">Logs</button>
+                <button class="detail-tab" id="tab-btn-overview" onclick="switchTab(event, 'overview')">Overview</button>
+                <button class="detail-tab" id="tab-btn-headers" onclick="switchTab(event, 'headers')">Headers</button>
+                <button class="detail-tab" id="tab-btn-technologies" onclick="switchTab(event, 'technologies')">Technologies</button>
+                <button class="detail-tab" id="tab-btn-endpoints" onclick="switchTab(event, 'endpoints')">Endpoints</button>
+                <button class="detail-tab" id="tab-btn-apis" onclick="switchTab(event, 'apis')">APIs</button>
+                <button class="detail-tab" id="tab-btn-security" onclick="switchTab(event, 'security')">Security</button>
+                <button class="detail-tab" id="tab-btn-fuzzing" onclick="switchTab(event, 'fuzzing')">Fuzzing</button>
             </div>
 
             <div id="tab-overview" class="tab-content">
@@ -823,12 +822,12 @@
                         <div style="font-size: 0.9rem;">
                             <div style="margin-bottom: 0.4rem;">
                                 <strong>Status:</strong> 
-                                <span class="badge ${details.status_code ? (details.status_code < 400 ? 'badge-success' : 'badge-warning') : 'badge-danger'}">
-                                    ${details.status_code ? `✅ Live (${details.status_code})` : '❌ No Response'}
+                                <span class="badge ${details.status_code ? (details.status_code < 400 ? 'badge-success' : (details.status_code < 500 ? 'badge-warning' : 'badge-danger')) : (details.http_intelligence?.status_code ? 'badge-success' : 'badge-danger')}">
+                                    ${details.status_code || (details.http_intelligence?.status_code) ? `✅ Live (${details.status_code || details.http_intelligence.status_code})` : '❌ No Response'}
                                 </span>
                             </div>
-                            <div style="margin-bottom: 0.4rem;"><strong>WAF:</strong> <span style="color: ${details.waf === 'None detected' ? 'var(--text-muted)' : 'var(--warning)'}; font-weight: 600;">${details.waf || 'None detected'}</span></div>
-                            <div style="margin-bottom: 0.4rem;"><strong>CDN:</strong> <span style="color: ${details.cdn === 'None detected' ? 'var(--text-muted)' : 'var(--primary)'}; font-weight: 600;">${details.cdn || 'None detected'}</span></div>
+                            <div style="margin-bottom: 0.4rem;"><strong>WAF:</strong> <span style="color: ${(!details.waf || details.waf === 'None detected') ? 'var(--text-muted)' : 'var(--warning)'}; font-weight: 600;">${details.waf || 'None detected'}</span></div>
+                            <div style="margin-bottom: 0.4rem;"><strong>CDN:</strong> <span style="color: ${(!details.cdn || details.cdn === 'None detected') ? 'var(--text-muted)' : 'var(--primary)'}; font-weight: 600;">${details.cdn || 'None detected'}</span></div>
                         </div>
                     </div>
                 </div>
@@ -852,15 +851,6 @@
                 </div>
             </div>
 
-            <div id="tab-logs" class="tab-content hidden">
-                <div class="flex-between mb-md">
-                    <h3 style="margin:0;">Live Progress Logs</h3>
-                    <div style="font-size: 0.8rem; color: var(--text-muted);">Showing activity for: <strong>${details.domain}</strong></div>
-                </div>
-                <div id="subdomain-log-container" style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; height: 350px; overflow-y: auto; color: #a1a1aa; line-height: 1.5;">
-                    <p style="text-align: center; padding-top: 100px;">Initializing log stream...</p>
-                </div>
-            </div>
 
             <div id="tab-headers" class="tab-content hidden">
                 ${details.security_headers && Object.keys(details.security_headers).some(k => details.security_headers[k]) ? `
@@ -1018,9 +1008,14 @@
             <div id="tab-fuzzing" class="tab-content hidden">
                 <div class="flex-between mb-md">
                     <h3 style="margin:0;">Directory Fuzzing</h3>
-                    <button id="fuzz-btn" class="btn btn-outline" onclick="toggleFuzzing('${details.domain}')" data-running="false" style="border-color: #60a5fa; color: #60a5fa;">
-                        🚀 Start Directory Build-out
-                    </button>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <select id="fuzz-wordlist-select" class="form-input" style="width: 180px; font-size: 0.8rem; padding: 0.4rem;">
+                            <option value="">Default List</option>
+                        </select>
+                        <button id="fuzz-btn" class="btn btn-outline" onclick="toggleFuzzing('${details.domain}')" data-running="false" style="border-color: #60a5fa; color: #60a5fa;">
+                            🚀 Start Fuzzing
+                        </button>
+                    </div>
                 </div>
                 <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 12px;">
                     <h4 style="margin-top: 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Discovered Sensitive Paths</h4>
@@ -1031,6 +1026,33 @@
             </div>
         `;
 
+        // Load wordlists for the dropdown (Issue 7)
+        fetchWordlists();
+
+        // FIX: Ensure Overview tab is initialized immediately (Issue 1)
+        setTimeout(() => switchTab(null, 'overview'), 10);
+    }
+
+    async function fetchWordlists() {
+        try {
+            const res = await fetch('/subdomains/wordlists');
+            const data = await res.json();
+            const select = document.getElementById('fuzz-wordlist-select');
+            if (select && data.wordlists) {
+                // Keep the default option
+                select.innerHTML = '<option value="">Default List (common.txt)</option>';
+                data.wordlists.forEach(w => {
+                    if (w !== 'common.txt') {
+                        const opt = document.createElement('option');
+                        opt.value = w;
+                        opt.textContent = w;
+                        select.appendChild(opt);
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Wordlist fetch error", e);
+        }
     }
 
     // Switch tabs in modal
@@ -1039,9 +1061,6 @@
 
     function switchTab(e, tabName) {
         if (e) e.preventDefault();
-        const target = e ? e.currentTarget : document.querySelector(`.detail-tab[onclick*="${tabName}"]`);
-
-        console.log(`Switching to tab: ${tabName}`);
 
         // Remove active from all tabs
         document.querySelectorAll('.detail-tab').forEach(tab => tab.classList.remove('active'));
@@ -1051,48 +1070,17 @@
             content.style.display = 'none';
         });
 
-        // Activate clicked tab
-        if (target) target.classList.add('active');
+        // Activate clicked tab or by ID
+        const tabBtn = e ? e.currentTarget : document.getElementById(`tab-btn-${tabName}`);
+        if (tabBtn) tabBtn.classList.add('active');
 
         const contentPanel = document.getElementById(`tab-${tabName}`);
         if (contentPanel) {
             contentPanel.classList.remove('hidden');
             contentPanel.style.display = 'block';
-            console.log(`Showing panel: tab-${tabName}`);
-        } else {
-            console.error(`Panel not found: tab-${tabName}`);
-        }
-
-        // Handle Logs Tab Polling
-        if (subdomainLogInterval) clearInterval(subdomainLogInterval);
-        if (tabName === 'logs' && currentDetailDomain) {
-            pollSubdomainLogs(currentDetailDomain);
-            subdomainLogInterval = setInterval(() => pollSubdomainLogs(currentDetailDomain), 2000);
         }
     }
 
-    async function pollSubdomainLogs(domain) {
-        const container = document.getElementById('subdomain-log-container');
-        if (!container) return;
-
-        try {
-            const res = await fetch('/get_logs');
-            const data = await res.json();
-            const logs = data.logs || [];
-
-            // Filter logs mentioning the domain
-            const filtered = logs.filter(line => line.toLowerCase().includes(domain.toLowerCase()));
-
-            if (filtered.length > 0) {
-                container.innerHTML = filtered.map(line => `<div style="margin-bottom: 2px;">${escapeHtml(line)}</div>`).join('');
-                container.scrollTop = container.scrollHeight;
-            } else {
-                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding-top: 100px;">No specific logs found for this subdomain yet...</p>';
-            }
-        } catch (e) {
-            console.error("Log fetch error:", e);
-        }
-    }
 
     async function triggerIntelligenceScan(domain) {
         const btn = document.getElementById('trigger-scan-btn');

@@ -560,6 +560,18 @@ def trigger_scan():
     return jsonify({"success": True, "message": f"Scan started for {domain}"})
 
 
+@main_bp.route("/subdomains/wordlists", methods=["GET"])
+@api_error_handler
+def get_wordlists():
+    """List available wordlists in app/core/wordlists."""
+    wordlist_dir = os.path.join(current_app.root_path, "core", "wordlists")
+    if not os.path.exists(wordlist_dir):
+        return jsonify({"success": True, "wordlists": ["common.txt"]})
+    
+    files = [f for f in os.listdir(wordlist_dir) if f.endswith(".txt")]
+    return jsonify({"success": True, "wordlists": sorted(files)})
+
+
 # ── Jobs ──────────────────────────────────────────────────────────
 
 @main_bp.route("/jobs/status", methods=["GET"])
