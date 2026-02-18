@@ -305,7 +305,7 @@ class SubdomainIntelligence:
             "ip_intelligence": results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
             "dns_records": results[1] if not isinstance(results[1], Exception) else [],
             "ssl_certificate": results[2] if not isinstance(results[2], Exception) else {"valid": False},
-            "http_headers": results[3].get("headers") if isinstance(results[3], dict) else results[3],
+            "http_headers": results[3] if isinstance(results[3], dict) else {},
             "cdn_waf_detection": results[4] if not isinstance(results[4], Exception) else {"detected": []},
             "technology_stack": results[5] if not isinstance(results[5], Exception) else {"technologies": []},
             "http_intelligence": results[6] if not isinstance(results[6], Exception) else {},
@@ -315,6 +315,7 @@ class SubdomainIntelligence:
             "technology_fingerprint": results[9] if not isinstance(results[9], Exception) else {"technologies": []},
             "cdn_waf_enhanced": results[10] if not isinstance(results[10], Exception) else {"detected": []},
             "geolocation": results[11] if not isinstance(results[11], Exception) else {"error": "unresolved"},
+            "page_text": results[6].get("page_text") if isinstance(results[6], dict) else "",
             "last_intelligence_scan": datetime.now().isoformat()
         }
 
@@ -323,15 +324,37 @@ class SubdomainIntelligence:
         api_set.update(intel_result.get("katana_endpoints", []))
         intel_result["api_endpoints"] = sorted(list(api_set))
 
+        # Categorized Endpoints for UI
+        endpoints_by_source = results[7].get("endpoints_by_source", {}) if isinstance(results[7], dict) else {}
+        # Add Katana results to the source-based dict
+        endpoints_by_source["Katana Crawler"] = intel_result.get("katana_endpoints", [])
+        intel_result["categorized_endpoints"] = endpoints_by_source
+
         # Promote key fields to top-level for UI visibility
         # 1. Technologies list
         all_techs = set()
+        categorized_techs = {}
+        confidence_scores = {}
+        
+        # Merge from technology_stack (basic)
         if isinstance(intel_result["technology_stack"], dict):
-            all_techs.update(intel_result["technology_stack"].get("technologies", []))
+            techs = intel_result["technology_stack"].get("technologies", [])
+            all_techs.update(techs)
+            for t in techs:
+                categorized_techs[t] = categorized_techs.get(t, "Other")
+                confidence_scores[t] = confidence_scores.get(t, "low")
+        
+        # Merge from technology_fingerprint (advanced - preferred)
         if isinstance(intel_result["technology_fingerprint"], dict):
-            all_techs.update(intel_result["technology_fingerprint"].get("technologies", []))
+            techs = intel_result["technology_fingerprint"].get("technologies", [])
+            all_techs.update(techs)
+            # Update with better data
+            categorized_techs.update(intel_result["technology_fingerprint"].get("categorized_techs", {}))
+            confidence_scores.update(intel_result["technology_fingerprint"].get("confidence_scores", {}))
         
         intel_result["technologies"] = sorted(list(all_techs))
+        intel_result["categorized_techs"] = categorized_techs
+        intel_result["confidence_scores"] = confidence_scores
         intel_result["technologies_found"] = len(all_techs)
 
         # 2. Status Code
@@ -342,10 +365,14 @@ class SubdomainIntelligence:
         intel_result["waf"] = intel_result["cdn_waf_detection"].get("waf") or intel_result["cdn_waf_enhanced"].get("waf") or "None detected"
         intel_result["cdn"] = intel_result["cdn_waf_detection"].get("cdn") or intel_result["cdn_waf_enhanced"].get("cdn") or "None detected"
         
+        # Prefer Geolocation module data for ASN/Org/Country
+        geo = intel_result.get("geolocation", {}).get("geolocation") or {}
         ip_intel = intel_result.get("ip_intelligence", {})
-        intel_result["asn"] = ip_intel.get("asn", "Unknown")
-        intel_result["org"] = ip_intel.get("organization", ip_intel.get("isp", "Unknown"))
-        intel_result["country"] = ip_intel.get("country", "Unknown")
+        
+        intel_result["asn"] = geo.get("asn") or ip_intel.get("asn", "Unknown")
+        intel_result["org"] = geo.get("organization") or ip_intel.get("organization", ip_intel.get("isp", "Unknown"))
+        intel_result["country"] = geo.get("country") or ip_intel.get("country", "Unknown")
+        intel_result["city"] = geo.get("city") or "Unknown"
         
         ssl = intel_result.get("ssl_certificate", {})
         intel_result["ssl_info"] = {
@@ -353,6 +380,14 @@ class SubdomainIntelligence:
             "valid_until": ssl.get("not_after", "Unknown"),
             "valid": ssl.get("valid", False)
         }
+
+        # Consolidate Headers & Security Headers for UI
+        http_intel = intel_result.get("http_intelligence", {})
+        if not intel_result.get("http_headers") and http_intel.get("headers_raw"):
+            intel_result["http_headers"] = http_intel["headers_raw"]
+        
+        intel_result["security_headers"] = http_intel.get("security_headers") or {}
+        intel_result["tech_indicators"] = http_intel.get("tech_indicators") or {}
 
         return intel_result
     

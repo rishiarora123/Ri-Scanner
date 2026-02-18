@@ -301,7 +301,7 @@ def log_message():
 
 @main_bp.route("/get_logs", methods=["GET"])
 def get_logs_route():
-    return jsonify(scan_logs)
+    return jsonify({"logs": scan_logs})
 
 
 # ── Search (with regex injection fix) ─────────────────────────────
@@ -388,8 +388,8 @@ def search_title():
                     r['title'] = r.get('domain', 'Subdomain')
                 combined.append(r)
                 
-            # Sort descending by date
-            combined.sort(key=lambda x: x.get('_sort_date', ''), reverse=True)
+            # Sort descending by date - Ensure strings for comparison to avoid datetime vs str errors
+            combined.sort(key=lambda x: str(x.get('_sort_date', '')), reverse=True)
             
             total_count = len(combined)
             

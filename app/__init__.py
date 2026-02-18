@@ -97,6 +97,14 @@ def create_app():
     @app.errorhandler(Exception)
     def handle_exception(e):
         """Global error handler to prevent HTML error pages in JSON API."""
+        # Handle 404/405 explicitly to avoid masking them as 500
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            return jsonify({
+                "error": e.name,
+                "message": e.description
+            }), e.code
+
         # Log the error
         app.logger.error(f"Global Error Catch: {str(e)}")
         # Return JSON instead of HTML

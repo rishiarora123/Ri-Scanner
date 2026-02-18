@@ -102,6 +102,13 @@
                         <option value="status">📊 Status Code</option>
                     </select>
                 </div>
+
+                <!-- Http Text Filter -->
+                <div>
+                    <label class="form-label" style="font-size: 0.9rem; margin-bottom: 0.5rem;">Http Text Search</label>
+                    <input type="text" id="filter-http-text" class="form-input" placeholder="Search in page content..."
+                        onchange="applyFilters()">
+                </div>
             </div>
 
             <div style="margin-top: 1rem; text-align: right;">
@@ -401,6 +408,61 @@
     .fuzz-status-500 {
         border-left-color: var(--warning);
     }
+
+    /* Fuzzing Results Styling */
+    .fuzz-result-item {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: all 0.2s ease;
+    }
+
+    .fuzz-result-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.1);
+        transform: translateX(4px);
+    }
+
+    .fuzz-status-200 {
+        border-left: 3px solid #34d399 !important;
+    }
+
+    .fuzz-status-301,
+    .fuzz-status-302 {
+        border-left: 3px solid #60a5fa !important;
+    }
+
+    .fuzz-status-403 {
+        border-left: 3px solid #ef4444 !important;
+    }
+
+    .fuzz-badge {
+        font-size: 0.7rem;
+        padding: 0.1rem 0.5rem;
+        border-radius: 4px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .fuzz-badge-200 {
+        background: rgba(52, 211, 153, 0.1);
+        color: #34d399;
+    }
+
+    .fuzz-badge-30x {
+        background: rgba(96, 165, 250, 0.1);
+        color: #60a5fa;
+    }
+
+    .fuzz-badge-403 {
+        background: rgba(239, 68, 68, 0.1);
+        color: #f87171;
+    }
 </style>
 
 <script>
@@ -465,6 +527,7 @@
         const source = document.getElementById('filter-source').value;
         const hasSite = document.getElementById('filter-has-site').value;
         const sortBy = document.getElementById('sort-by').value;
+        const httpText = document.getElementById('filter-http-text').value;
 
         // Show loading
         const container = document.getElementById('subdomains-container');
@@ -486,7 +549,8 @@
                 status: status,
                 source: source,
                 has_site: hasSite,
-                sort_by: sortBy
+                sort_by: sortBy,
+                http_text: httpText
             });
 
             const res = await fetch(`/subdomains/list/${currentScanId}?${params.toString()}`);
@@ -673,17 +737,26 @@
             const data = await res.json();
 
             if (data.results && data.results.length > 0) {
-                container.innerHTML = data.results.map(r => `
-                    <div class="fuzz-result-item fuzz-status-${r.status_code}">
-                        <div style="display: flex; gap: 1rem; align-items: center;">
-                            <span style="font-weight: bold; width: 40px;">${r.status_code}</span>
-                            <a href="${r.url}" target="_blank" style="color: var(--text-primary); text-decoration: none;">/${r.path}</a>
+                container.style.justifyContent = 'flex-start';
+                container.innerHTML = data.results.map(r => {
+                    const statusClass = r.status_code === 200 ? 'fuzz-status-200' : (r.status_code >= 300 && r.status_code < 400 ? 'fuzz-status-301' : 'fuzz-status-403');
+                    const badgeClass = r.status_code === 200 ? 'fuzz-badge-200' : (r.status_code >= 300 && r.status_code < 400 ? 'fuzz-badge-30x' : 'fuzz-badge-403');
+                    return `
+                        <div class="fuzz-result-item ${statusClass}">
+                            <div style="display: flex; gap: 1rem; align-items: center;">
+                                <span class="fuzz-badge ${badgeClass}">${r.status_code}</span>
+                                <a href="${r.url}" target="_blank" style="color: var(--text-main); text-decoration: none; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">/${r.path}</a>
+                            </div>
+                            <div style="display: flex; gap: 1rem; font-size: 0.75rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
+                                <span>Size: ${r.length}</span>
+                                ${r.redirect_location ? `<span style="color: var(--primary);">→ ${r.redirect_location}</span>` : ''}
+                            </div>
                         </div>
-                        <span style="color: var(--text-muted); font-size: 0.75rem;">Size: ${r.length}</span>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } else {
-                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 1rem;">No paths found yet...</p>';
+                container.style.justifyContent = 'center';
+                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 3rem;">No sensitive paths found yet. Results appear here during active fuzzing.</p>';
             }
         } catch (e) {
             console.error("Fuzz results error", e);
@@ -742,14 +815,20 @@
                             <div style="margin-bottom: 0.4rem;"><strong>IP:</strong> ${details.ip || details.primary_ip || 'N/A'}</div>
                             <div style="margin-bottom: 0.4rem;"><strong>ASN:</strong> ${details.asn || 'N/A'}</div>
                             <div style="margin-bottom: 0.4rem;"><strong>Org:</strong> ${details.org || 'N/A'}</div>
+                            <div style="margin-bottom: 0.4rem;"><strong>Country:</strong> ${details.country || 'N/A'} ${details.city && details.city !== 'Unknown' ? `(${details.city})` : ''}</div>
                         </div>
                     </div>
                     <div>
-                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Performance</h4>
+                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Application Info</h4>
                         <div style="font-size: 0.9rem;">
-                            <div style="margin-bottom: 0.4rem;"><strong>Status:</strong> <span class="badge ${details.status_code === 200 ? 'badge-success' : 'badge-warning'}">${details.status_code || 'No Response'}</span></div>
-                            <div style="margin-bottom: 0.4rem;"><strong>Latent:</strong> ${details.response_time_ms ? details.response_time_ms + ' ms' : 'N/A'}</div>
-                            <div style="margin-bottom: 0.4rem;"><strong>CDN:</strong> ${details.cdn || 'None detected'}</div>
+                            <div style="margin-bottom: 0.4rem;">
+                                <strong>Status:</strong> 
+                                <span class="badge ${details.status_code ? (details.status_code < 400 ? 'badge-success' : 'badge-warning') : 'badge-danger'}">
+                                    ${details.status_code ? `✅ Live (${details.status_code})` : '❌ No Response'}
+                                </span>
+                            </div>
+                            <div style="margin-bottom: 0.4rem;"><strong>WAF:</strong> <span style="color: ${details.waf === 'None detected' ? 'var(--text-muted)' : 'var(--warning)'}; font-weight: 600;">${details.waf || 'None detected'}</span></div>
+                            <div style="margin-bottom: 0.4rem;"><strong>CDN:</strong> <span style="color: ${details.cdn === 'None detected' ? 'var(--text-muted)' : 'var(--primary)'}; font-weight: 600;">${details.cdn || 'None detected'}</span></div>
                         </div>
                     </div>
                 </div>
@@ -784,55 +863,156 @@
             </div>
 
             <div id="tab-headers" class="tab-content hidden">
+                ${details.security_headers && Object.keys(details.security_headers).some(k => details.security_headers[k]) ? `
+                    <div style="margin-bottom: 1.5rem;">
+                        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--warning); text-transform: uppercase; letter-spacing: 0.05em;">Security Headers</h4>
+                        <div class="grid-2" style="gap: 0.75rem;">
+                            ${Object.entries(details.security_headers).filter(([k, v]) => v).map(([k, v]) => `
+                                <div style="background: rgba(255,193,7,0.05); border: 1px solid rgba(255,193,7,0.1); padding: 0.75rem; border-radius: 6px; font-size: 0.8rem;">
+                                    <div style="color: var(--warning); font-weight: 600; margin-bottom: 0.2rem;">${k.replace(/_/g, '-').toUpperCase()}</div>
+                                    <div style="font-family: 'JetBrains Mono', monospace; word-break: break-all; color: var(--text-main);">${v}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">HTTP Raw Headers</h4>
                 ${details.http_headers ? `
                     <div class="code-block" style="background: rgba(0,0,0,0.3); padding: 1.5rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.6; max-height: 400px; overflow-y: auto;">
-                        ${Object.entries(details.http_headers).map(([k, v]) => `<div style="margin-bottom: 0.2rem;"><span style="color: #60a5fa;">${k}:</span> <span style="color: #e5e7eb;">${v}</span></div>`).join('')}
+                        ${Object.entries(details.http_headers).map(([k, v]) => `<div style="margin-bottom: 0.35rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.35rem;"><span style="color: var(--primary); font-weight: 600;">${k}:</span> <span style="color: #e5e7eb; word-break: break-all;">${v}</span></div>`).join('')}
                     </div>
-                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No HTTP headers available.</p>'}
+                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem; background: rgba(0,0,0,0.2); border-radius: 8px;">No HTTP headers available.</p>'}
             </div>
 
             <div id="tab-technologies" class="tab-content hidden">
-                ${details.technologies && details.technologies.length > 0 ? `
-                    <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; padding: 1rem;">
-                        ${details.technologies.map(tech => `<span class="tech-tag" style="background: rgba(96, 165, 250, 0.1); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.2); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 500;">${tech}</span>`).join('')}
-                    </div>
-                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No technologies detected yet.</p>'}
+                ${details.technologies && details.technologies.length > 0 ? (() => {
+                const categorized = {};
+                details.technologies.forEach(tech => {
+                    const cat = (details.categorized_techs && details.categorized_techs[tech]) || 'Other';
+                    if (!categorized[cat]) categorized[cat] = [];
+                    categorized[cat].push(tech);
+                });
+
+                return Object.entries(categorized).map(([cat, techs]) => `
+                        <div style="margin-bottom: 1.5rem;">
+                            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">${cat}</h4>
+                            <div class="tech-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem;">
+                                ${techs.map(tech => {
+                    const confidence = (details.confidence_scores && details.confidence_scores[tech]) || 'low';
+                    const confColor = confidence === 'high' ? '#34d399' : (confidence === 'medium' ? '#fbbf24' : '#9ca3af');
+                    return `
+                                        <div style="background: rgba(139, 92, 246, 0.05); border: 1px solid rgba(139, 92, 246, 0.1); padding: 0.75rem; border-radius: 8px; display: flex; flex-direction: column; justify-content: space-between;">
+                                            <div style="color: #a78bfa; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem;">${tech}</div>
+                                            <div style="display: flex; align-items: center; font-size: 0.7rem; color: var(--text-muted);">
+                                                <span style="width: 6px; height: 6px; border-radius: 50%; background: ${confColor}; margin-right: 0.4rem;"></span>
+                                                ${confidence.toUpperCase()} CONFIDENCE
+                                            </div>
+                                        </div>
+                                    `;
+                }).join('')}
+                            </div>
+                        </div>
+                    `).join('');
+            })() : '<p style="color: var(--text-muted); text-align: center; padding: 3rem; background: rgba(0,0,0,0.2); border-radius: 8px;">No technologies identified.</p>'}
             </div>
 
             <div id="tab-endpoints" class="tab-content hidden">
-                ${details.endpoints && details.endpoints.length > 0 ? `
-                    <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; max-height: 400px; overflow-y: auto;">
-                        ${details.endpoints.map(e => `<div style="margin-bottom: 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.3rem;">${e}</div>`).join('')}
-                    </div>
-                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No crawled endpoints discovered.</p>'}
+                ${details.categorized_endpoints && Object.keys(details.categorized_endpoints).some(k => details.categorized_endpoints[k] && details.categorized_endpoints[k].length > 0) ? `
+                    ${Object.entries(details.categorized_endpoints).filter(([source, list]) => list && list.length > 0).map(([source, list]) => `
+                        <div style="margin-bottom: 1.5rem;">
+                            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">${source.replace(/_/g, ' ').replace('from ', '')}</h4>
+                            <div class="code-block" style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; max-height: 250px; overflow-y: auto;">
+                                ${list.map(e => {
+                const val = typeof e === 'object' ? (e.path || JSON.stringify(e)) : e;
+                return `<div style="margin-bottom: 0.3rem; color: #e5e7eb; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 0.2rem; word-break: break-all;">${val}</div>`;
+            }).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem; background: rgba(0,0,0,0.2); border-radius: 8px;">No endpoints discovered yet.</p>'}
             </div>
 
             <div id="tab-apis" class="tab-content hidden">
                 ${details.api_endpoints && details.api_endpoints.length > 0 ? `
-                    <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; max-height: 400px; overflow-y: auto;">
-                        ${details.api_endpoints.map(e => `<div style="margin-bottom: 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #60a5fa; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.3rem;">${e}</div>`).join('')}
+                    <div style="background: rgba(0,0,0,0.2); border-left: 4px solid var(--primary); padding: 1.5rem; border-radius: 8px; max-height: 400px; overflow-y: auto;">
+                        <h4 style="margin: 0 0 1rem 0; font-size: 0.85rem; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em;">Detected API Endpoints</h4>
+                        <div class="code-block" style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; line-height: 1.8;">
+                            ${details.api_endpoints.map(e => `<div style="margin-bottom: 0.4rem; color: #60a5fa; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.4rem; word-break: break-all;">${e}</div>`).join('')}
+                        </div>
                     </div>
-                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem;">No API endpoints identified yet.</p>'}
+                ` : '<p style="color: var(--text-muted); text-align: center; padding: 3rem; background: rgba(0,0,0,0.2); border-radius: 8px;">No API endpoints identified yet.</p>'}
             </div>
 
             <div id="tab-security" class="tab-content hidden">
                 <div class="grid-2" style="gap: 1.5rem;">
                     <div>
-                        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Security Shield</h4>
-                        <div style="font-size: 0.9rem;">
-                            <div style="margin-bottom: 0.6rem;"><strong>WAF:</strong> <span style="color: ${details.waf === 'None detected' ? '#9ca3af' : '#fbbf24'};">${details.waf}</span></div>
-                            <div style="margin-bottom: 0.6rem;"><strong>SSL Status:</strong> <span style="color: ${details.ssl_info?.valid ? '#34d399' : '#f87171'};">${details.ssl_info?.valid ? 'Secure/Valid' : 'Insecure/Invalid'}</span></div>
-                            <div style="margin-bottom: 0.6rem;"><strong>SSL Issuer:</strong> ${details.ssl_info?.issuer || 'Unknown'}</div>
-                            <div style="margin-bottom: 0.6rem;"><strong>SSL Expiry:</strong> ${details.ssl_info?.valid_until || 'Unknown'}</div>
+                        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Security Certificate</h4>
+                        <div style="background: rgba(0,0,0,0.2); padding: 1.25rem; border-radius: 8px; border: 1px solid ${details.ssl_info?.valid ? 'rgba(52, 211, 153, 0.1)' : 'rgba(239, 68, 68, 0.1)'};">
+                            <div style="margin-bottom: 0.6rem; display: flex; align-items: center;">
+                                <strong style="width: 80px; font-size: 0.8rem; color: var(--text-muted);">Status:</strong> 
+                                <span style="color: ${details.ssl_info?.valid ? '#34d399' : '#ef4444'}; font-weight: 600; font-size: 0.9rem;">
+                                    ${details.ssl_info?.valid ? '✅ Secure' : '❌ Insecure'}
+                                </span>
+                            </div>
+                            <div style="margin-bottom: 0.6rem; display: flex; align-items: flex-start;">
+                                <strong style="width: 80px; font-size: 0.8rem; color: var(--text-muted);">Issuer:</strong> 
+                                <span style="font-size: 0.85rem; color: var(--text-main);">${details.ssl_info?.issuer || 'Unknown'}</span>
+                            </div>
+                            <div style="display: flex; align-items: center;">
+                                <strong style="width: 80px; font-size: 0.8rem; color: var(--text-muted);">Expires:</strong> 
+                                <span style="font-size: 0.85rem; color: var(--text-main);">${details.ssl_info?.valid_until || 'Unknown'}</span>
+                            </div>
                         </div>
                     </div>
+
                     <div>
-                        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">DNS Records</h4>
-                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 4px; max-height: 200px; overflow-y: auto;">
+                        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Infrastructure</h4>
+                        <div style="background: rgba(0,0,0,0.2); padding: 1.25rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 1rem;">
+                            <div style="margin-bottom: 0.6rem; display: flex; align-items: center;">
+                                <strong style="width: 60px; font-size: 0.8rem; color: var(--text-muted);">WAF:</strong> 
+                                <span style="font-size: 0.9rem; font-weight: 500; color: ${details.waf === 'None detected' ? 'var(--text-muted)' : 'var(--warning)'};">
+                                    ${details.waf || 'None detected'}
+                                </span>
+                            </div>
+                            <div style="display: flex; align-items: center;">
+                                <strong style="width: 60px; font-size: 0.8rem; color: var(--text-muted);">CDN:</strong> 
+                                <span style="font-size: 0.9rem; font-weight: 500; color: ${details.cdn === 'None detected' ? 'var(--text-muted)' : 'var(--primary)'};">
+                                    ${details.cdn || 'None detected'}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <h4 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">DNS Records</h4>
+                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 8px; max-height: 120px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05);">
                             ${details.dns_records ? Object.entries(details.dns_records).filter(([k, v]) => v && v.length > 0).map(([k, v]) => `<div><strong style="color: #60a5fa;">${k}:</strong> ${v.join(', ')}</div>`).join('\n') : 'No DNS records found'}
                         </div>
                     </div>
                 </div>
+
+                ${details.security_headers ? (() => {
+                const missing = [];
+                const headers = {
+                    'X-Frame-Options': 'x_frame_options',
+                    'X-Content-Type-Options': 'x_content_type_options',
+                    'Content-Security-Policy': 'content_security_policy',
+                    'Strict-Transport-Security': 'strict_transport_security'
+                };
+                Object.entries(headers).forEach(([name, key]) => {
+                    if (!details.security_headers[key]) missing.push(name);
+                });
+
+                if (missing.length === 0) return '';
+
+                return `
+                        <div style="margin-top: 1.5rem;">
+                            <h4 style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--danger); text-transform: uppercase; letter-spacing: 0.05em;">Missing Security Headers</h4>
+                            <div class="code-block" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.1); padding: 1rem; border-radius: 8px;">
+                                ${missing.map(h => `<div style="color: #fca5a5; font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; margin-bottom: 0.4rem;">[-] Missing: ${h}</div>`).join('')}
+                            </div>
+                        </div>
+                    `;
+            })() : ''}
             </div>
 
             <div id="tab-fuzzing" class="tab-content hidden">
@@ -897,7 +1077,8 @@
 
         try {
             const res = await fetch('/get_logs');
-            const logs = await res.json();
+            const data = await res.json();
+            const logs = data.logs || [];
 
             // Filter logs mentioning the domain
             const filtered = logs.filter(line => line.toLowerCase().includes(domain.toLowerCase()));

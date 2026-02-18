@@ -129,6 +129,9 @@ class SubdomainManager:
                      elif filters["has_site"] == "no":
                          # status_code is missing or null
                          query["$or"] = [{"status_code": {"$exists": False}}, {"status_code": None}]
+                if filters.get("http_text"):
+                    safe_text_query = re.escape(filters["http_text"])
+                    query["page_text"] = {"$regex": safe_text_query, "$options": "i"}
 
             # Sort
             sort_order = [("discovered_at", -1)] # Default new first

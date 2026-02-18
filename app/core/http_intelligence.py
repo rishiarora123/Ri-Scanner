@@ -7,6 +7,7 @@ import httpx
 import asyncio
 from typing import Dict, Any, List
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 # Common User-Agent to avoid blocking
 DEFAULT_HEADERS = {
@@ -39,7 +40,8 @@ class HTTPIntelligence:
             "cookies": [],
             "cache_control": None,
             "server_info": None,
-            "response_time": None
+            "response_time": None,
+            "page_text": ""
         }
         
         # Try both HTTP and HTTPS
@@ -105,6 +107,22 @@ class HTTPIntelligence:
                                 }
                                 for i, h in enumerate(response.history)
                             ]
+                        
+                        # Capture and clean page text
+                        try:
+                            soup = BeautifulSoup(response.text, "html.parser")
+                            # Remove script and style elements
+                            for script_or_style in soup(["script", "style"]):
+                                script_or_style.decompose()
+                            # Get text
+                            text = soup.get_text(separator=" ")
+                            # Clean up whitespace
+                            lines = (line.strip() for line in text.splitlines())
+                            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                            clean_text = " ".join(chunk for chunk in chunks if chunk)
+                            headers_result["page_text"] = clean_text[:5000] # Cap at 5k chars for DB sanity
+                        except Exception as e:
+                            headers_result["page_text"] = f"Error capturing text: {str(e)}"
                         
                         return headers_result
                         

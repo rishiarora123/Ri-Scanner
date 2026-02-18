@@ -102,13 +102,23 @@ class TechFingerprint:
             results["from_headers"] = self._detect_from_headers(headers)
             results["from_cookies"] = self._detect_from_cookies(headers.get("Set-Cookie", ""))
         
-        # Aggregate and score
+        # Aggregate, score and categorize
         all_techs = {}
+        tech_to_category = {}
+        
+        # Categorize by looking up in SIGNATURES
+        def _get_category(tech_name):
+            for cat, techs in self.SIGNATURES.items():
+                if tech_name in techs:
+                    return cat
+            return "Other"
+
         for source, techs in results.items():
             if source != "confidence" and isinstance(techs, list):
                 for tech in techs:
                     if tech not in all_techs:
                         all_techs[tech] = 0
+                        tech_to_category[tech] = _get_category(tech)
                     all_techs[tech] += 1
         
         # Assign confidence
@@ -124,6 +134,7 @@ class TechFingerprint:
         return {
             "total_technologies": len(all_techs),
             "technologies": sorted(list(all_techs.keys())),
+            "categorized_techs": tech_to_category,
             "detection_sources": results,
             "confidence_scores": results["confidence"]
         }
