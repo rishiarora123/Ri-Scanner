@@ -222,10 +222,13 @@ def stop_scan():
     scan_context["gate_phase4"].set()
     scan_context["gate_phase3"].set()
     try:
-        subprocess.run(["sudo", "killall", "-q", "masscan"], capture_output=True)
+        subprocess.run(["killall", "masscan"], capture_output=True, timeout=5)
     except Exception: pass
     try:
-        subprocess.run(["sudo", "killall", "-q", "naabu"], capture_output=True)
+        subprocess.run(["sudo", "-n", "killall", "masscan"], capture_output=True, timeout=5)
+    except Exception: pass
+    try:
+        subprocess.run(["killall", "naabu"], capture_output=True, timeout=5)
     except Exception: pass
     scan_status["phase"] = "Stopping..."
     scan_status["waiting_for_user"] = False  # FIX: Clear waiting flag on stop

@@ -1,10 +1,12 @@
 import asyncio
 import os
+import re
 import socket
 import json
 import time
 import subprocess
 import ipaddress
+import shutil
 import threading  # FIX: Added for phase-gate Events
 from typing import List, Dict, Any, Set, Optional
 from .recon_runner import get_recon_runner
@@ -692,18 +694,44 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 try:
                     with open(chunk_file, "w") as f:
                         f.write("\n".join(chunk))
-                    
+
                     log_event(f"[*] Starting Masscan on chunk {idx + 1}/{len(chunks)} ({len(chunk)} targets) for ports: {clean_ports}")
                     update_status({"masscan_status": "Running"})
-                    # SECURITY FIX: Use list-based subprocess to prevent command injection
-                    cmd = ["sudo", "masscan", f"-p{clean_ports}", "-iL", chunk_file, 
-                           "--rate", str(masscan_rate), "-oJ", output_file, "--wait", "0"]
-                    proc = await asyncio.create_subprocess_exec(*cmd)
-                    await proc.communicate()
-                    
+
+                    masscan_path = shutil.which("masscan") or "masscan"
+                    base_cmd = [masscan_path, f"-p{clean_ports}", "-iL", chunk_file,
+                                "--rate", str(masscan_rate), "-oJ", output_file, "--wait", "3"]
+
+                    # Try without sudo first (works on macOS with BPF permissions)
+                    proc = await asyncio.create_subprocess_exec(
+                        *base_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, stderr = await proc.communicate()
+
+                    # If permission denied, retry with sudo -n (non-interactive)
+                    if proc.returncode != 0:
+                        stderr_text = stderr.decode(errors="replace") if stderr else ""
+                        if "permission" in stderr_text.lower() or "operation not permitted" in stderr_text.lower() or proc.returncode == 1:
+                            log_event(f"[*] Masscan chunk {idx + 1}: retrying with sudo...")
+                            sudo_cmd = ["sudo", "-n"] + base_cmd
+                            proc = await asyncio.create_subprocess_exec(
+                                *sudo_cmd,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE
+                            )
+                            stdout, stderr = await proc.communicate()
+
+                    if proc.returncode != 0:
+                        stderr_text = stderr.decode(errors="replace") if stderr else ""
+                        log_event(f"[!] Masscan chunk {idx + 1} failed (exit {proc.returncode}): {stderr_text[:300]}")
+
                     if os.path.exists(output_file):
                         async with m_lock:
                             m_files.append(output_file)
+                    elif proc.returncode == 0:
+                        log_event(f"[!] Masscan chunk {idx + 1}: no output file produced (0 results)")
                 finally:
                     if os.path.exists(chunk_file): os.remove(chunk_file)
         finally:
@@ -871,19 +899,46 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
     all_findings_list = []
     all_findings_list.extend(nc_findings)
     
-    # Merge Masscan
+    # Merge Masscan (masscan -oJ produces malformed JSON: trailing commas, {finished:1} marker)
     masscan_all_entries = []
     for f_path in m_files:
         try:
             with open(f_path, "r") as f:
-                data = json.load(f)
-                masscan_all_entries.extend(data)
-                for entry in data:
-                    ip = entry.get("ip")
+                raw = f.read().strip()
+            if not raw:
+                os.remove(f_path)
+                continue
+            # Fix masscan's broken JSON: remove {finished:1} lines, trailing commas before ]
+            raw = re.sub(r'\{[^{}]*"finished"[^{}]*\},?\s*', '', raw)
+            raw = re.sub(r',\s*\]', ']', raw)
+            raw = re.sub(r',\s*$', '', raw)
+            if not raw.startswith('['):
+                raw = '[' + raw + ']'
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                # Last resort: parse line-by-line for individual JSON objects
+                data = []
+                for line in raw.splitlines():
+                    line = line.strip().rstrip(',')
+                    if line and line.startswith('{') and line.endswith('}'):
+                        try:
+                            data.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+            masscan_all_entries.extend(data)
+            for entry in data:
+                ip = entry.get("ip")
+                if ip:
                     for p in entry.get("ports", []):
-                        all_findings_list.append((ip, p.get("port")))
+                        port_num = p.get("port")
+                        if port_num is not None:
+                            all_findings_list.append((ip, port_num))
             os.remove(f_path)
-        except: pass
+        except Exception as e:
+            log_event(f"[!] Error parsing masscan output {f_path}: {e}")
+            try: os.remove(f_path)
+            except: pass
     
     with open(masscan_combined_file, "w") as f:
         json.dump(masscan_all_entries, f)
