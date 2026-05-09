@@ -65,20 +65,21 @@ class FuzzingManager:
         if not os.path.exists("Tmp"): os.makedirs("Tmp")
         output_file = os.path.join("Tmp", f"ffuf_{int(time.time())}_{job_id}.json")
 
-        cmd = f"ffuf -u {url}/FUZZ -w {wlist} -mc 200,301,302,403 -o {output_file} -of json -t 50 -timeout 5"
-        
-        print(f"[*] Starting Fuzzing: {cmd}")
+        cmd = ["ffuf", "-u", f"{url}/FUZZ", "-w", wlist,
+               "-mc", "200,301,302,403", "-o", output_file, "-of", "json",
+               "-t", "50", "-timeout", "5"]
 
-        # Launch async task
+        print(f"[*] Starting Fuzzing: {' '.join(cmd)}")
+
         task = asyncio.create_task(self._run_ffuf_task(job_id, cmd, output_file, scan_id, domain))
         self.active_scans[job_id] = task
-        
+
         return {"success": True, "job_id": job_id, "message": "Fuzzing started"}
 
     async def _run_ffuf_task(self, job_id, cmd, output_file, scan_id, domain):
         try:
-            process = await asyncio.create_subprocess_shell(
-                cmd,
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
@@ -99,7 +100,7 @@ class FuzzingManager:
                 del self.active_scans[job_id]
             if os.path.exists(output_file):
                 try: os.remove(output_file)
-                except: pass
+                except OSError: pass
 
     def _parse_and_save_results(self, output_file, scan_id, domain):
         try:

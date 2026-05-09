@@ -7,21 +7,22 @@ import subprocess
 import shlex
 from typing import Dict, Any, List
 
-async def run_cmd(cmd: str, timeout: int = 30) -> str:
-    """Run a shell command asynchronously and return the output."""
+async def run_cmd(cmd_parts: list, timeout: int = 30) -> str:
+    """Run a command asynchronously using list-based exec (no shell injection)."""
     try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd_parts,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            return (stdout.decode() + stderr.decode()).strip()
+            return (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
         except asyncio.TimeoutError:
             try:
                 proc.kill()
-            except:
+                await proc.wait()
+            except ProcessLookupError:
                 pass
             return "[!] Command timed out"
     except Exception as e:
@@ -77,10 +78,10 @@ async def get_dns_info(ip: str) -> Dict[str, Any]:
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        ptr = stdout.decode().strip() or "No PTR record"
-    except:
+        ptr = stdout.decode(errors="replace").strip() or "No PTR record"
+    except (asyncio.TimeoutError, OSError, Exception):
         ptr = "No PTR record"
-    
+
     try:
         proc = await asyncio.create_subprocess_exec(
             "nslookup", ip,
@@ -88,8 +89,8 @@ async def get_dns_info(ip: str) -> Dict[str, Any]:
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        nslookup = (stdout.decode() + stderr.decode()).strip()
-    except:
+        nslookup = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
+    except (asyncio.TimeoutError, OSError, Exception):
         nslookup = "nslookup failed"
     
     return {
@@ -126,24 +127,19 @@ async def run_nmap(ip: str, ports: List[int] = None) -> Dict[str, Any]:
 
 async def get_curl_headers(ip: str, port: int) -> Dict[str, Any]:
     protocol = "https" if port == 443 else "http"
-    output = await run_cmd(f"curl -Iks {protocol}://{ip}:{port}")
-    return {
-        "raw": output
-    }
+    output = await run_cmd(["curl", "-Iks", "--max-time", "10", f"{protocol}://{ip}:{port}"])
+    return {"raw": output}
 
 async def get_ssl_details(ip: str, port: int = 443) -> Dict[str, Any]:
     if port != 443: return {}
-    output = await run_cmd(f"echo | openssl s_client -connect {ip}:443 -brief", timeout=10)
-    return {
-        "raw": output
-    }
+    output = await run_cmd(["openssl", "s_client", "-connect", f"{ip}:443", "-brief"], timeout=10)
+    return {"raw": output}
 
 async def check_mongodb_nc(ip: str) -> str:
     """Specialized check for MongoDB using Netcat."""
-    # nc -vz <IP> 27017
-    output = await run_cmd(f"nc -vz -w 3 {ip} 27017")
+    output = await run_cmd(["nc", "-vz", "-w", "3", ip, "27017"])
     if "succeeded" in output.lower() or "open" in output.lower():
-        return f"[!] MongoDB (27017) is OPEN (nc verified)"
+        return "[!] MongoDB (27017) is OPEN (nc verified)"
     return None
 
 async def check_exposures(ip: str) -> List[str]:
@@ -171,7 +167,7 @@ async def check_exposures(ip: str) -> List[str]:
             exposures.append(f"{name} ({port}) is OPEN")
             writer.close()
             await writer.wait_closed()
-        except:
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
             pass
             
     return exposures

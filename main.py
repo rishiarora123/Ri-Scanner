@@ -32,12 +32,12 @@ def cleanup_handler(sig=None, frame=None):
             except Exception as e:
                 print(f"[!] Could not remove {path}: {e}")
     
-    # Kill any stray masscan processes
     try:
-        subprocess.run(["killall", "-q", "masscan"], 
-                      stdout=subprocess.DEVNULL, 
-                      stderr=subprocess.DEVNULL)
-    except:
+        subprocess.run(["killall", "masscan"],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
         pass
     
     if sig is not None:

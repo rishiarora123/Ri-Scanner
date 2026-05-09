@@ -4,6 +4,7 @@ Comprehensive scanning of a single IP address with full intelligence gathering
 """
 
 import asyncio
+import re
 import socket
 import subprocess
 import shlex
@@ -163,9 +164,8 @@ class IPScanner:
         # Use custom ports if provided, otherwise use common ports
         if ports and ports.strip():
             try:
-                port_list_str = ports.split(',')
-                port_list = [int(p.strip()) for p in port_list_str if p.strip().isdigit()]
-            except:
+                port_list = [int(p.strip()) for p in ports.split(',') if p.strip().isdigit()]
+            except (ValueError, AttributeError):
                 port_list = [80, 443]
         else:
             port_list = [20, 21, 22, 25, 53, 80, 110, 143, 443, 445, 3306, 3389, 5432, 5984, 6379, 7001, 8000, 8008, 8080, 8443, 8888, 9000, 9200, 9300, 11211, 27017, 27018, 50070]
@@ -180,51 +180,33 @@ class IPScanner:
         
         async def check_port(port):
             try:
-                # nc -z -n -w 1 -> zero-I/O, no-dns, wait 1 sec
                 cmd = ["nc", "-z", "-n", "-w", "1", ip, str(port)]
-                
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
-                stdout, stderr = await process.communicate()
-                
-                import sys
+                await process.communicate()
                 if process.returncode == 0:
-                    print(f"[DEBUG] Port {port} is OPEN on {ip}", file=sys.stderr)
                     return {
                         "port": port,
                         "protocol": "tcp",
                         "state": "open",
                         "service": common_services.get(port, "unknown")
                     }
-                else:
-                    err_msg = stderr.decode().strip()
-                    print(f"[DEBUG] Port {port} CLOSED. Code: {process.returncode}. Stderr: {err_msg}", file=sys.stderr)
-                    pass
-            except Exception as e:
-                import sys
-                print(f"[ERROR] Port scan failed for {port}: {e}", file=sys.stderr)
+            except (OSError, Exception):
                 pass
             return None
 
-        # Run checks concurrently with a semaphore
-        # Reduced to 20 to avoid system limit issues
         sem = asyncio.Semaphore(20)
-        
+
         async def bound_check(port):
             async with sem:
                 return await check_port(port)
-        
-        import sys
-        print(f"[DEBUG] Scanning {len(port_list)} ports for {ip} with nc...", file=sys.stderr)
+
         tasks = [bound_check(p) for p in port_list]
         results = await asyncio.gather(*tasks)
-        
-        open_ports = [r for r in results if r is not None]
-        print(f"[DEBUG] Found {len(open_ports)} open ports: {[p['port'] for p in open_ports]}", file=sys.stderr)
-        return open_ports
+        return [r for r in results if r is not None]
     
     async def _get_ssl_certificates(self, ip: str, ports: str = None) -> List[Dict[str, Any]]:
         """Extract SSL/TLS certificates from HTTPS ports"""
@@ -234,42 +216,48 @@ class IPScanner:
         if ports and ports.strip():
             try:
                 ports_to_check = [int(p.strip()) for p in ports.split(',') if p.strip().isdigit()]
-            except:
+            except (ValueError, AttributeError):
                 ports_to_check = [443, 8443, 9443]
         else:
             ports_to_check = [443, 8443, 9443]
         
-        import sys
-        
         for port in ports_to_check:
             try:
-                # Use openssl s_client to fetch certificate (more reliable for CN extraction)
-                # timeout 5s
-                print(f"[DEBUG] SSL Scanning {ip}:{port}...", file=sys.stderr)
-                cmd = f"openssl s_client -connect {ip}:{port} -servername {ip} -showcerts < /dev/null 2>/dev/null | openssl x509 -noout -subject -issuer -dates"
-                
-                process = await asyncio.create_subprocess_shell(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                # Use openssl s_client with list-based exec (no shell injection)
+                ssl_cmd = ["openssl", "s_client", "-connect", f"{ip}:{port}",
+                           "-servername", ip, "-showcerts"]
+                x509_cmd = ["openssl", "x509", "-noout", "-subject", "-issuer", "-dates"]
+
+                ssl_proc = await asyncio.create_subprocess_exec(
+                    *ssl_cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
                 )
-                
+                x509_proc = await asyncio.create_subprocess_exec(
+                    *x509_cmd,
+                    stdin=ssl_proc.stdout,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                ssl_proc.stdout.close()
+                ssl_proc.stdin.close()
+
                 try:
-                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=5)
+                    stdout, _ = await asyncio.wait_for(x509_proc.communicate(), timeout=5)
+                    await ssl_proc.wait()
                 except asyncio.TimeoutError:
-                    print(f"[ERROR] SSL scan timeout for {ip}:{port}", file=sys.stderr)
                     try:
-                        process.kill()
-                    except:
+                        ssl_proc.kill()
+                        x509_proc.kill()
+                    except ProcessLookupError:
                         pass
                     continue
-                
-                if process.returncode != 0:
-                    print(f"[DEBUG] SSL scan failed for {ip}:{port} (code {process.returncode})", file=sys.stderr)
+
+                if x509_proc.returncode != 0:
                     continue
 
                 output = stdout.decode('utf-8', errors='ignore')
-                print(f"[DEBUG] SSL Output for {ip}:{port}: {output[:50]}...", file=sys.stderr)
                 
                 if not output.strip():
                      continue
@@ -288,8 +276,6 @@ class IPScanner:
                         # Extract CN from subject
                         # subject=CN = dns.google OR subject=C = US, ST = California, L = Mountain View, O = Google LLC, CN = dns.google
                         cert_info["subject"] = line[8:]
-                        # Regex to find CN
-                        import re
                         cn_match = re.search(r"CN\s*=\s*([^/,]+)", line)
                         if cn_match:
                             cert_info["common_name"] = cn_match.group(1).strip()
@@ -304,9 +290,8 @@ class IPScanner:
                 if cert_info.get("common_name") or cert_info.get("subject"):
                     certificates.append(cert_info)
                     
-            except Exception as e:
-                print(f"[ERROR] SSL scan error for {ip}:{port}: {e}", file=sys.stderr)
-                pass
+            except (asyncio.TimeoutError, OSError, Exception):
+                continue
         
         return certificates
     
@@ -402,10 +387,9 @@ class IPScanner:
                     "source": "reverse_dns",
                     "confidence": "high"
                 })
-            except:
+            except (socket.herror, socket.gaierror, OSError):
                 pass
-            
-            # Query DNS PTR record
+
             try:
                 reversed_ip = '.'.join(reversed(ip.split('.'))) + '.in-addr.arpa'
                 answers = self.resolver.resolve(reversed_ip, 'PTR')
@@ -415,10 +399,10 @@ class IPScanner:
                         "source": "ptr_record",
                         "confidence": "high"
                     })
-            except:
+            except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.Timeout, Exception):
                 pass
-        
-        except Exception as e:
+
+        except Exception:
             pass
         
         return domains
@@ -457,7 +441,7 @@ class IPScanner:
                 if 'x-mod-security' in headers or 'modsecurity' in str(headers):
                     cdn_waf["waf"] = "ModSecurity"
                     cdn_waf["indicators"].append("modsecurity header")
-        except:
+        except (httpx.HTTPError, httpx.TimeoutException, OSError, Exception):
             pass
         
         return cdn_waf
@@ -488,16 +472,16 @@ class IPScanner:
         try:
             import ipaddress
             return ipaddress.ip_address(ip).is_private
-        except:
+        except (ValueError, TypeError):
             return False
-    
+
     def _is_reserved_ip(self, ip: str) -> bool:
         """Check if IP is reserved"""
         try:
             import ipaddress
             ip_obj = ipaddress.ip_address(ip)
             return ip_obj.is_reserved or ip_obj.is_loopback or ip_obj.is_multicast
-        except:
+        except (ValueError, TypeError):
             return False
     
     def _calculate_threat_score(self, threat_info: Dict[str, Any]) -> int:

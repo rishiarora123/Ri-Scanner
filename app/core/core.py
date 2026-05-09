@@ -333,13 +333,14 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         
         unique_asns = set()
         for ip in phase2_ips:
-             try:
-                 info = get_ip_info(ip)
-                 if info and info.get("asn"):
-                     asn_val = info["asn"]
-                     if asn_val and asn_val != "Unknown":
-                         unique_asns.add(asn_val)
-             except: pass
+            try:
+                info = get_ip_info(ip)
+                if info and info.get("asn"):
+                    asn_val = info["asn"]
+                    if asn_val and asn_val != "Unknown":
+                        unique_asns.add(asn_val)
+            except Exception as e:
+                log_event(f"[!] Failed to get ASN for {ip}: {e}")
         
         log_event(f"[*] Found {len(unique_asns)} unique ASNs from valid subdomains.")
         update_status({
@@ -351,17 +352,17 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         expanded_ranges = []
         
         for idx, asn in enumerate(unique_asns):
-             if _is_stopped(scan_context): break
-             # FIX: Log per-ASN expansion progress
-             log_event(f"  🌐 Expanding ASN {idx+1}/{len(unique_asns)}: {asn}")
-             try:
-                 asn_ranges = resolve_asn_to_ips(asn)
-                 for r in asn_ranges:
-                     # Check private/reserved
-                     if _is_private_or_reserved(r): continue
-                     expanded_ranges.append(r)
-                 log_event(f"    → {len(asn_ranges)} IP ranges from {asn}")
-             except: continue
+            if _is_stopped(scan_context): break
+            log_event(f"  🌐 Expanding ASN {idx+1}/{len(unique_asns)}: {asn}")
+            try:
+                asn_ranges = resolve_asn_to_ips(asn)
+                for r in asn_ranges:
+                    if _is_private_or_reserved(r): continue
+                    expanded_ranges.append(r)
+                log_event(f"    → {len(asn_ranges)} IP ranges from {asn}")
+            except Exception as e:
+                log_event(f"[!] Failed to expand {asn}: {e}")
+                continue
              
         # Add expanded ranges to main list
         # We do this carefully
@@ -435,8 +436,9 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                                 all_ip_ranges.append(r)
                         elif ipaddress.ip_address(r).version == 4:
                             all_ip_ranges.append(r)
-                    except: continue
-            
+                    except (ValueError, TypeError):
+                        continue
+
     elif mode == "ip_file":
         log_event(f"🚀 Starting IP File Scan: {target}")
         update_status({"active_threads": threads, "phase": "📡 Reading IP Ranges"})
@@ -451,7 +453,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                                     all_ip_ranges.append(r)
                             elif ipaddress.ip_address(r).version == 4:
                                 all_ip_ranges.append(r)
-                        except: continue
+                        except (ValueError, TypeError):
+                            continue
     
     # ── STOP CHECK ──
     if _is_stopped(scan_context):
@@ -624,23 +627,22 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
             await proc.communicate()
             if proc.returncode == 0:
                 log_event(f"🔥 [+] [NC] DISCOVERY: Found Open 27017 on {ip} (Added to Queue)")
-                # Append to txt file immediately as requested
                 try:
                     with open(nc_discovery_file, "a") as af:
                         af.write(f"{ip}\n")
-                except: pass
+                except OSError:
+                    pass
 
                 async with discovery_lock:
                     if (ip, 27017) not in discovered_findings:
                         discovered_findings.add((ip, 27017))
-                        # Trigger deep investigation immediately in background
                         t = asyncio.create_task(process_investigation(ip, [27017]))
                         live_tasks.add(t)
                         t.add_done_callback(lambda x: live_tasks.discard(x))
-                        
+
                 async with nc_lock:
                     nc_findings.append((ip, 27017))
-        except:
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
             pass
 
     async def run_nc_chunk(idx, chunk):
@@ -663,7 +665,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                             await queue.put(str(ip))
                     else:
                         await queue.put(range_str)
-                except: continue
+                except (ValueError, TypeError):
+                    continue
             # Signal workers to exit
             for _ in range(WORKER_COUNT): await queue.put(None)
 
@@ -879,9 +882,9 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 await run_naabu_chunk(i, c)
 
     finally:
-        if os.path.exists(range_file): 
+        if os.path.exists(range_file):
             try: os.remove(range_file)
-            except: pass
+            except OSError: pass
 
     # ── STOP CHECK ──
     if _is_stopped(scan_context):
@@ -938,11 +941,11 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         except Exception as e:
             log_event(f"[!] Error parsing masscan output {f_path}: {e}")
             try: os.remove(f_path)
-            except: pass
-    
+            except OSError: pass
+
     with open(masscan_combined_file, "w") as f:
         json.dump(masscan_all_entries, f)
-        
+
     # Merge Naabu
     with open(naabu_combined_file, "w") as combined_f:
         for f_path in n_files:
@@ -950,11 +953,15 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
                 with open(f_path, "r") as f:
                     for line in f:
                         combined_f.write(line)
-                        if ":" in line:
-                            ip, port = line.strip().split(":")
-                            all_findings_list.append((ip, int(port)))
+                        parts = line.strip().split(":")
+                        if len(parts) == 2:
+                            try:
+                                all_findings_list.append((parts[0], int(parts[1])))
+                            except ValueError:
+                                continue
                 os.remove(f_path)
-            except: pass
+            except (OSError, Exception) as e:
+                log_event(f"[!] Error processing naabu file {f_path}: {e}")
 
     # Combined deduplication and IP collection for deep analysis
     ip_to_ports = {}
@@ -1000,7 +1007,8 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         try:
             os.remove(masscan_combined_file)
             os.remove(naabu_combined_file)
-        except: pass
+        except OSError:
+            pass
     else:
         log_event(f"[*] Keeping result files: {masscan_combined_file}, {naabu_combined_file}")
     
@@ -1017,7 +1025,7 @@ def _deduplicate_cidrs(ranges):
         for r in ranges:
             try:
                 networks.append(ipaddress.ip_network(r, strict=False))
-            except:
+            except (ValueError, TypeError):
                 continue
         
         # Sort by network address then by prefix length (largest first)
