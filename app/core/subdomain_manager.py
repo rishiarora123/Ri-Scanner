@@ -74,16 +74,16 @@ class SubdomainManager:
                     upsert=True
                 ))
                 ops_count += 1
-                
+
                 # Flush batch
                 if len(ops) >= BATCH_SIZE:
-                    self.db.subdomains.bulk_write(ops, ordered=False)
+                    self._flush_bulk_batch(ops, batch_label=f"subdomains (scan_id={scan_id})")
                     ops = []
-            
+
             # Flush remaining
             if ops:
-                self.db.subdomains.bulk_write(ops, ordered=False)
-            
+                self._flush_bulk_batch(ops, batch_label=f"subdomains (scan_id={scan_id})")
+
             print(f"[*] Saved {ops_count} subdomain records to MongoDB (bulk, batch={BATCH_SIZE})")
             return True
         except Exception as e:
@@ -91,6 +91,26 @@ class SubdomainManager:
             import traceback
             traceback.print_exc()
             return False
+
+    def _flush_bulk_batch(self, ops, batch_label="bulk"):
+        """BUGFIX: explicit error handling for bulk_write.
+
+        Previously a bulk_write failure would propagate up and silently lose
+        the entire batch with only a generic exception message. Now we log
+        the BulkWriteError details (per-op errors) and continue.
+        """
+        from pymongo.errors import BulkWriteError, PyMongoError
+        try:
+            self.db.subdomains.bulk_write(ops, ordered=False)
+        except BulkWriteError as bwe:
+            details = bwe.details or {}
+            n_ok = details.get('nUpserted', 0) + details.get('nMatched', 0)
+            n_err = len(details.get('writeErrors', []))
+            print(f"[!] Partial bulk_write {batch_label}: {n_ok} ok, {n_err} failed")
+            for err in details.get('writeErrors', [])[:3]:
+                print(f"    err code={err.get('code')}: {err.get('errmsg', '')[:200]}")
+        except PyMongoError as e:
+            print(f"[!] bulk_write {batch_label} failed entirely: {e}")
     
     def get_subdomains(self, scan_id: str, filters: Optional[Dict] = None, page: int = 1, per_page: int = 50) -> Dict[str, Any]:
         """

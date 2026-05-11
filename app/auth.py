@@ -120,6 +120,31 @@ def generate_api_key() -> str:
     return f"rsk_{secrets.token_urlsafe(32)}"
 
 
+# ── Safe Redirect ─────────────────────────────────────────────────
+def _is_safe_redirect(url: str) -> bool:
+    """Validate a `next` redirect URL is same-origin and a simple path.
+
+    Rejects protocol-relative URLs (//evil.com), scheme URLs (http://x),
+    backslash variants (\\\\evil.com), and anything not starting with a
+    single forward slash.
+    """
+    if not url or not isinstance(url, str):
+        return False
+    # Must start with exactly one '/'
+    if not url.startswith('/'):
+        return False
+    # Reject protocol-relative URLs: //evil.com
+    if url.startswith('//'):
+        return False
+    # Reject backslash-prefixed (some browsers normalize \\ to //)
+    if url.startswith('/\\') or '\\' in url[:3]:
+        return False
+    # Reject anything with a scheme (http:, javascript:, data:)
+    if ':' in url.split('/', 2)[0:2][-1]:
+        return False
+    return True
+
+
 # ── Validation ────────────────────────────────────────────────────
 def validate_username(username: str) -> Tuple[bool, str]:
     if not username:
@@ -255,6 +280,12 @@ def record_failed_login(username: str) -> Optional[datetime]:
     """
     Record a failed login attempt. Lock the account if too many recent failures.
     Returns the locked_until datetime if account is now locked.
+
+    BUGFIX: previously, when lockout triggered, failed_logins was cleared to
+    []. Combined with manual unlock that DIDN'T clear failed_logins, that
+    left an inconsistent state. Now we always keep the same rolling window
+    semantics: failed_logins is the source of truth; locked_until is derived.
+    On unlock (admin re-enable or successful login), both are cleared.
     """
     coll = get_users_collection()
     if coll is None:
@@ -265,7 +296,10 @@ def record_failed_login(username: str) -> Optional[datetime]:
     if not doc:
         return None
 
-    # Filter to recent failures only, append this one
+    # Don't record failures during an active lockout (lockout already in effect)
+    if doc.get('locked_until') and doc['locked_until'] > now:
+        return doc['locked_until']
+
     recent = [t for t in doc.get('failed_logins', []) if t > window_start]
     recent.append(now)
 
@@ -274,7 +308,6 @@ def record_failed_login(username: str) -> Optional[datetime]:
     if len(recent) >= MAX_FAILED_LOGINS:
         locked_until = now + timedelta(minutes=LOCKOUT_WINDOW_MIN)
         update['locked_until'] = locked_until
-        update['failed_logins'] = []  # reset counter after lockout
         audit_log('user.locked', User(doc), {'until': locked_until.isoformat()})
 
     coll.update_one({'_id': doc['_id']}, {'$set': update})
@@ -392,8 +425,10 @@ def login():
     update_last_login(user.id)
     audit_log('login.success', user)
 
+    # SECURITY FIX: Prevent open-redirect via protocol-relative URL (//evil.com).
+    # Only allow paths starting with a single slash; reject //, \\, http://, etc.
     next_url = request.args.get('next') or url_for('main.home')
-    if not next_url.startswith('/'):
+    if not _is_safe_redirect(next_url):
         next_url = url_for('main.home')
     return redirect(next_url)
 

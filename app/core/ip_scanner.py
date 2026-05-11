@@ -247,11 +247,18 @@ class IPScanner:
                     stdout, _ = await asyncio.wait_for(x509_proc.communicate(), timeout=5)
                     await ssl_proc.wait()
                 except asyncio.TimeoutError:
-                    try:
-                        ssl_proc.kill()
-                        x509_proc.kill()
-                    except ProcessLookupError:
-                        pass
+                    # BUGFIX: kill() doesn't reap zombies; we must await wait()
+                    # afterwards to release process slots.
+                    for p in (ssl_proc, x509_proc):
+                        try:
+                            p.kill()
+                        except ProcessLookupError:
+                            pass
+                    for p in (ssl_proc, x509_proc):
+                        try:
+                            await asyncio.wait_for(p.wait(), timeout=2)
+                        except (asyncio.TimeoutError, ProcessLookupError, Exception):
+                            pass
                     continue
 
                 if x509_proc.returncode != 0:

@@ -89,8 +89,11 @@ scan_context = {
     "phase3_strategy": "sequential",    # Default scan strategy
 }
 
-# Wire shared state into core.py (no HTTP overhead)
+# Wire shared state into core.py (no HTTP overhead).
+# Use the lock from core.py for all mutations so updates are atomic across
+# the scan thread, request handlers, and the SSE stream.
 core.set_shared_state(scan_status, scan_logs)
+_state_lock = core.get_state_lock()
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
 
@@ -105,30 +108,38 @@ def run_async_in_thread(coro):
 # More efficient than polling: pushes status + logs to dashboard the
 # moment they change, no 1.5s lag.
 def _scan_event_stream():
-    """Yield SSE-formatted scan status updates."""
+    """Yield SSE-formatted scan status updates.
+
+    BUGFIX: snapshots scan_status / scan_logs under the lock so values stay
+    consistent and don't tear during concurrent writes. Limits client run
+    time so we don't accumulate stuck generators forever.
+    """
     last_phase = None
     last_log_idx = 0
-    while True:
-        try:
-            # Status update on change
-            current_phase_signature = (
-                scan_status.get('phase'),
-                scan_status.get('masscan_pct'),
-                scan_status.get('naabu_pct'),
-                scan_status.get('found_count'),
-                scan_status.get('waiting_for_user'),
-            )
-            if current_phase_signature != last_phase:
-                last_phase = current_phase_signature
-                yield f"event: status\ndata: {json.dumps(scan_status)}\n\n"
+    start = time.time()
+    MAX_STREAM_SECONDS = 60 * 60  # disconnect after 1h — client auto-reconnects
 
-            # New log lines
-            if len(scan_logs) > last_log_idx:
-                new_logs = scan_logs[last_log_idx:]
-                last_log_idx = len(scan_logs)
+    while time.time() - start < MAX_STREAM_SECONDS:
+        try:
+            with _state_lock:
+                current_phase_signature = (
+                    scan_status.get('phase'),
+                    scan_status.get('masscan_pct'),
+                    scan_status.get('naabu_pct'),
+                    scan_status.get('found_count'),
+                    scan_status.get('waiting_for_user'),
+                )
+                status_snapshot = dict(scan_status) if current_phase_signature != last_phase else None
+                log_total = len(scan_logs)
+                new_logs = scan_logs[last_log_idx:log_total] if log_total > last_log_idx else None
+
+            if status_snapshot is not None:
+                last_phase = current_phase_signature
+                yield f"event: status\ndata: {json.dumps(status_snapshot)}\n\n"
+            if new_logs:
+                last_log_idx = log_total
                 yield f"event: logs\ndata: {json.dumps(new_logs)}\n\n"
 
-            # Heartbeat every 15s so clients don't disconnect
             yield ": heartbeat\n\n"
             time.sleep(0.5)
         except GeneratorExit:
@@ -245,24 +256,27 @@ def start_scan():
     else:
         return jsonify({"error": f"⚠️ Unsupported scan mode: {mode}"}), 400
     
-    # Reset Status
+    # Reset Status (atomic — lock prevents lost updates from concurrent SSE reads)
     global scan_status, scan_logs, scan_context
-    scan_status.update({
-        "phase": "🚀 Initializing scan...",
-        "masscan_progress": 0, "masscan_total": 0,
-        "masscan_ranges_done": 0, "masscan_ranges_total": 0,
-        "naabu_progress": 0, "naabu_total": 0,
-        "found_count": 0, "active_threads": threads,
-        "estimated_remaining": "Calculating...",
-        # Per-user tracking
-        "created_by": current_user.id,
-        "created_by_username": current_user.username,
-        "target": target,
-        "mode": mode,
-        "started_at": datetime.utcnow().isoformat(),
-    })
-    scan_logs.clear()
-    scan_logs.append(f"✅ Deep Scan started by {current_user.username} - Target: {target}")
+    with _state_lock:
+        scan_status.update({
+            "phase": "🚀 Initializing scan...",
+            "masscan_progress": 0, "masscan_total": 0,
+            "masscan_ranges_done": 0, "masscan_ranges_total": 0,
+            "naabu_progress": 0, "naabu_total": 0,
+            "found_count": 0, "active_threads": threads,
+            "estimated_remaining": "Calculating...",
+            "created_by": current_user.id,
+            "created_by_username": current_user.username,
+            "target": target,
+            "mode": mode,
+            "started_at": datetime.utcnow().isoformat(),
+            # Reset waiting state from any prior scan
+            "waiting_for_user": False,
+            "current_gate": None,
+        })
+        scan_logs.clear()
+        scan_logs.append(f"✅ Deep Scan started by {current_user.username} - Target: {target}")
 
     # Persist scan record to history
     if current_app.db is not None:
@@ -327,8 +341,9 @@ def stop_scan():
     try:
         subprocess.run(["killall", "naabu"], capture_output=True, timeout=5)
     except Exception: pass
-    scan_status["phase"] = "Stopping..."
-    scan_status["waiting_for_user"] = False  # FIX: Clear waiting flag on stop
+    with _state_lock:
+        scan_status["phase"] = "Stopping..."
+        scan_status["waiting_for_user"] = False
     return jsonify({"status": "stopped"})
 
 
@@ -350,8 +365,9 @@ def continue_scan():
         scan_context["gate_phase2"].set()
         scan_context["gate_phase4"].set()
         scan_context["gate_phase3"].set()
-        scan_status["phase"] = "Stopped"
-        scan_status["waiting_for_user"] = False
+        with _state_lock:
+            scan_status["phase"] = "Stopped"
+            scan_status["waiting_for_user"] = False
         return jsonify({"status": "stopped"})
     
     # If user provided a Phase 3 strategy, store it
@@ -376,7 +392,10 @@ def continue_scan():
 
 @main_bp.route("/get_status", methods=["GET"])
 def get_status_route():
-    return jsonify(scan_status)
+    # Take a consistent snapshot under the lock
+    with _state_lock:
+        snapshot = dict(scan_status)
+    return jsonify(snapshot)
 
 @main_bp.route("/update_status", methods=["POST"])
 @api_error_handler
@@ -384,8 +403,9 @@ def update_status_route():
     """Legacy endpoint — status is now updated via shared state, but kept for backward compatibility."""
     data = request.get_json()
     if data:
-        for k, v in data.items():
-            scan_status[k] = v
+        with _state_lock:
+            for k, v in data.items():
+                scan_status[k] = v
     return jsonify({"status": "ok"})
 
 @main_bp.route("/log_update", methods=["POST"])
@@ -395,13 +415,17 @@ def log_message():
     data = request.get_json()
     msg = data.get("log") or data.get("message")
     if msg:
-        scan_logs.append(msg)
-        if len(scan_logs) > 500: scan_logs.pop(0)
+        with _state_lock:
+            scan_logs.append(msg)
+            if len(scan_logs) > 500:
+                scan_logs.pop(0)
     return jsonify({"status": "ok"})
 
 @main_bp.route("/get_logs", methods=["GET"])
 def get_logs_route():
-    return jsonify({"logs": scan_logs})
+    with _state_lock:
+        snapshot = list(scan_logs)
+    return jsonify({"logs": snapshot})
 
 
 @main_bp.route("/stream", methods=["GET"])

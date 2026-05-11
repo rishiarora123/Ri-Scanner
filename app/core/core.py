@@ -17,9 +17,15 @@ from .advanced_recon import SubdomainDiscovery, SubdomainIntelligence, EndpointM
 from .recon_progress import RealtimeScanTracker, ScanPhase, StructuredResultsCompiler
 
 # ── Shared State ──────────────────────────────────────────────────
-# These are set by routes.py at import time via set_shared_state()
+# These are set by routes.py at import time via set_shared_state().
+# BUGFIX: previously mutated from request handlers, the async scan loop,
+# and the SSE generator without synchronization, causing lost updates and
+# (rarely) dict-corruption errors. All mutations now go through a single
+# threading.Lock to make updates atomic.
 _scan_status = None
 _scan_logs = None
+_state_lock = threading.Lock()
+
 
 def set_shared_state(status_dict, logs_list):
     """Called by routes.py to share the in-memory dicts instead of HTTP calls."""
@@ -27,16 +33,27 @@ def set_shared_state(status_dict, logs_list):
     _scan_status = status_dict
     _scan_logs = logs_list
 
+
+def get_state_lock():
+    """Expose the lock so routes.py can wrap its own mutations."""
+    return _state_lock
+
+
 def update_status(data):
-    """Update scan status via shared dict (no HTTP overhead)."""
-    if _scan_status is not None:
+    """Update scan status atomically. Safe to call from any thread/async task."""
+    if _scan_status is None:
+        return
+    with _state_lock:
         for k, v in data.items():
             _scan_status[k] = v
 
+
 def log_event(message):
-    """Log to console + shared list (no HTTP overhead)."""
+    """Log to console + shared list atomically."""
     print(message)
-    if _scan_logs is not None:
+    if _scan_logs is None:
+        return
+    with _state_lock:
         _scan_logs.append(message)
         if len(_scan_logs) > 500:
             _scan_logs.pop(0)
@@ -47,22 +64,25 @@ def _is_stopped(scan_context):
         return scan_context["stop_event"].is_set()
     return False
 
-def _wait_for_user_gate(scan_context, gate_name, phase_complete_name, next_phase_name):
+async def _wait_for_user_gate(scan_context, gate_name, phase_complete_name, next_phase_name):
     """
-    FIX: Phase-gate helper — blocks the scan thread until the user confirms
-    continuation via the /continue_scan API, or until stop is requested.
-    
-    The gate is a threading.Event in scan_context. The /continue_scan route
-    sets it when the user clicks "Continue" on the Dashboard.
-    
+    Async phase-gate helper — yields control to the event loop while waiting
+    for the user to confirm continuation via the /continue_scan API, or
+    until stop is requested.
+
+    BUGFIX: Previously used `threading.Event.wait(timeout=0.5)` which BLOCKED
+    the entire async event loop for 500ms at a time, freezing all concurrent
+    operations (live investigations, SSE streams, log updates). Now uses
+    asyncio.sleep() to yield to other coroutines while polling.
+
     Returns:
         True if user chose to continue
         False if stop was requested while waiting
     """
     gate = scan_context.get(gate_name) if scan_context else None
     if gate is None:
-        return True  # No gate configured — auto-continue (non-recon modes)
-    
+        return True
+
     log_event(f"⏸️ {phase_complete_name} complete. Waiting for user to confirm {next_phase_name}...")
     update_status({
         "phase": f"⏸️ {phase_complete_name} — Waiting for user",
@@ -70,15 +90,15 @@ def _wait_for_user_gate(scan_context, gate_name, phase_complete_name, next_phase
         "current_gate": gate_name,
         "next_phase": next_phase_name,
     })
-    
-    # Block until gate is set (user clicks Continue) or stop is requested
+
+    # Poll the gate event without blocking the event loop.
     while not gate.is_set():
         if _is_stopped(scan_context):
             log_event(f"[!] Scan stopped while waiting at {gate_name}.")
             update_status({"phase": "Stopped", "waiting_for_user": False})
             return False
-        gate.wait(timeout=0.5)  # Check stop_event every 500ms
-    
+        await asyncio.sleep(0.25)
+
     log_event(f"▶️ User confirmed. Proceeding to {next_phase_name}.")
     update_status({"waiting_for_user": False, "current_gate": None})
     return True
@@ -206,7 +226,7 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         # ── FIX: PHASE GATE — DO NOT auto-continue to Phase 2 ─────────────
         # The scan thread blocks here until the user clicks "Continue" on
         # the Dashboard, or clicks "Stop & Export".
-        if not _wait_for_user_gate(scan_context, "gate_phase2",
+        if not await _wait_for_user_gate(scan_context, "gate_phase2",
                                    "Phase 1 (Subdomain Discovery)",
                                    "Phase 2 (Intelligence & Mapping)"):
             return  # User chose to stop
@@ -320,7 +340,7 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
 
         # ── FIX: PHASE GATE — Pause after Phase 2, before Phase 4 (ASN) ──
         update_status({"phase2_complete": True})
-        if not _wait_for_user_gate(scan_context, "gate_phase4",
+        if not await _wait_for_user_gate(scan_context, "gate_phase4",
                                    "Phase 2 (Intelligence & Mapping)",
                                    "Phase 4 (ASN Expansion)"):
             return  # User chose to stop
@@ -382,7 +402,7 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         # This gate also lets the user choose the Phase 3 scan strategy
         # (Masscan only / Naabu only / sequential / parallel).
         update_status({"phase4_complete": True})
-        if not _wait_for_user_gate(scan_context, "gate_phase3",
+        if not await _wait_for_user_gate(scan_context, "gate_phase3",
                                    "Phase 4 (ASN Expansion)",
                                    "Phase 3 (Infrastructure Scan)"):
             return  # User chose to stop
@@ -609,10 +629,11 @@ async def run_scan_logic(mode, target, threads=10, ports="80,443", masscan_rate=
         except Exception as e:
             log_event(f"[!] Critical error in investigation task for {ip}: {e}")
         finally:
-            # Self-remove from live tasks if tracked
+            # BUGFIX: use discard() not remove() — the done_callback may have
+            # already removed this task from live_tasks, causing KeyError.
+            # discard() is safe whether the task is present or not.
             task = asyncio.current_task()
-            if task in live_tasks:
-                live_tasks.remove(task)
+            live_tasks.discard(task)
 
     async def run_nc_on_ip(ip):
         """Single NC check with 5s timeout as requested."""

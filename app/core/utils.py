@@ -10,12 +10,41 @@ import requests
 from bs4 import BeautifulSoup
 
 # ── IP Info Cache ─────────────────────────────────────────────────
-_ip_info_cache = {}
-_ip_info_cache_ttl = 300  # 5 minutes
+# BUGFIX: cache previously grew unbounded; now uses OrderedDict with LRU
+# eviction at MAX_CACHE_SIZE entries, plus opportunistic TTL cleanup.
+from collections import OrderedDict
+_ip_info_cache = OrderedDict()
+_ip_info_cache_ttl = 300         # 5 minutes
+_ip_info_cache_max = 10_000      # hard cap on cache size (LRU evicts oldest)
+_ip_info_cache_lock = threading.Lock()  # protects cache reads/writes
 _ip_api_last_call = 0
-_IP_API_MIN_INTERVAL = 1.4  # ~43 req/min (free tier limit is 45/min)
-# SECURITY FIX: Add lock for thread-safe rate limiting
+_IP_API_MIN_INTERVAL = 1.4       # ~43 req/min (free tier limit is 45/min)
 _ip_api_lock = threading.Lock()
+
+
+def _cache_get(ip):
+    """Thread-safe cache lookup with TTL check and LRU bump."""
+    with _ip_info_cache_lock:
+        entry = _ip_info_cache.get(ip)
+        if not entry:
+            return None
+        if time.time() - entry["ts"] >= _ip_info_cache_ttl:
+            # Expired — drop it
+            _ip_info_cache.pop(ip, None)
+            return None
+        # Bump to end (most recently used)
+        _ip_info_cache.move_to_end(ip)
+        return entry["data"]
+
+
+def _cache_set(ip, data):
+    """Thread-safe cache write with LRU eviction."""
+    with _ip_info_cache_lock:
+        _ip_info_cache[ip] = {"data": data, "ts": time.time()}
+        _ip_info_cache.move_to_end(ip)
+        # Evict oldest entries if over the cap
+        while len(_ip_info_cache) > _ip_info_cache_max:
+            _ip_info_cache.popitem(last=False)
 
 
 def is_valid_domain(common_name):
@@ -233,29 +262,28 @@ def _try_hurricane_electric(asn_num):
 # ── IP Info ───────────────────────────────────────────────────────
 
 def get_ip_info(ip):
-    """Get ASN, Organization, and Country for an IP using ip-api.com (free demo).
-    Results are cached for 5 minutes. Rate-limited to ~43 req/min."""
+    """Get ASN, Organization, and Country for an IP using ip-api.com.
+    Results are cached for 5 minutes with LRU eviction at 10k entries.
+    Rate-limited to ~43 req/min (free tier cap is 45)."""
     global _ip_api_last_call
-    
-    # Check cache first
-    if ip in _ip_info_cache:
-        entry = _ip_info_cache[ip]
-        if time.time() - entry["ts"] < _ip_info_cache_ttl:
-            return entry["data"]
-    
-    # SECURITY FIX: Thread-safe rate limiting with lock
+
+    cached = _cache_get(ip)
+    if cached is not None:
+        return cached
+
+    # Thread-safe rate limiting
     with _ip_api_lock:
         now = time.time()
         elapsed = now - _ip_api_last_call
         if elapsed < _IP_API_MIN_INTERVAL:
             time.sleep(_IP_API_MIN_INTERVAL - elapsed)
         _ip_api_last_call = time.time()
-    
+
     try:
         session = _get_session()
         url = f"http://ip-api.com/json/{ip}?fields=status,message,as,org,country"
         response = session.get(url, timeout=5)
-        
+
         if response.status_code == 200:
             data = response.json()
             if data.get("status") == "success":
@@ -266,13 +294,13 @@ def get_ip_info(ip):
                     "org": data.get("org", "Unknown"),
                     "country": data.get("country", "Unknown")
                 }
-                _ip_info_cache[ip] = {"data": result, "ts": time.time()}
+                _cache_set(ip, result)
                 return result
     except Exception:
         pass
-    
+
     fallback = {"asn": "Unknown", "org": "Unknown", "country": "Unknown"}
-    _ip_info_cache[ip] = {"data": fallback, "ts": time.time()}
+    _cache_set(ip, fallback)
     return fallback
 
 
