@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+{% block title %}Technology Fingerprint · Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<header class="masthead">
+    <div class="masthead-meta">
+        <span class="byline"><span class="dot">●</span> § FORENSICS · TECH PROFILE</span>
+        <span class="byline" id="fp-time"></span>
+    </div>
+    <h1 class="masthead-title">
+        What is this <span class="serif-italic amber">running</span>?
+    </h1>
+    <p class="masthead-lede">
+        Identify every framework, library, server, CDN and known vulnerability behind any URL or IP — combining HTTP signatures, favicon hashing, TLS introspection, banner grabbing, and Shodan's free InternetDB.
+    </p>
+</header>
+
+<section class="card" style="margin-bottom: 2rem;">
+    <div class="section-head">
+        <span class="eyebrow">§ 01 · Target</span>
+        <span class="dateline">Domain · Host · IP</span>
+    </div>
+    <form id="fpForm" onsubmit="runFingerprint(event)">
+        <div class="form-row" style="display:grid; grid-template-columns: 1fr auto; gap: 0.75rem; margin-top: 1rem;">
+            <input type="text" id="targetInput" name="target" required autofocus
+                   placeholder="example.com · https://api.example.com · 8.8.8.8"
+                   style="font-size: 1.05rem;">
+            <button type="submit" id="runBtn" class="btn-primary" style="white-space:nowrap;">
+                Profile Target →
+            </button>
+        </div>
+        <p style="font-family: var(--mono); font-size: 0.75rem; color: var(--paper-mute); margin-top: 0.75rem; letter-spacing: 0.05em;">
+            <span class="amber">Tip:</span> If no scheme is given, HTTPS is assumed. Examples are not auto-resolved — use real targets you're authorized to scan.
+        </p>
+    </form>
+</section>
+
+<div id="fpStatus" style="display: none;" class="card">
+    <p style="font-family: var(--mono); color: var(--paper-dim); font-size: 0.9rem;">
+        <span class="amber">●</span> Profiling target… running HTTP probe, TLS introspection, banner grabs, Shodan InternetDB lookup, common-path scan, and favicon hashing in parallel.
+    </p>
+</div>
+
+<div id="fpResults" style="display: none;"></div>
+
+<style>
+.fp-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border: 1px solid var(--rule-strong);
+    margin-bottom: 2rem;
+}
+.fp-summary > div {
+    padding: 1.25rem;
+    border-right: 1px solid var(--rule);
+}
+.fp-summary > div:last-child { border-right: none; }
+@media (max-width: 700px) {
+    .fp-summary { grid-template-columns: 1fr 1fr; }
+    .fp-summary > div { border-bottom: 1px solid var(--rule); }
+}
+
+.tech-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--ink-2);
+    border: 1px solid var(--rule);
+    margin-bottom: 2rem;
+}
+.tech-table th, .tech-table td {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--rule);
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+}
+.tech-table th {
+    background: var(--ink-3);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--amber);
+}
+.tech-table tr:last-child td { border-bottom: none; }
+.tech-table tr:hover td { background: var(--ink-3); }
+.tech-cat {
+    color: var(--paper-mute);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+.tech-name {
+    color: var(--paper);
+    font-weight: 600;
+    font-family: var(--serif);
+    font-size: 1.05rem;
+}
+.tech-version {
+    color: var(--amber);
+    font-weight: 500;
+}
+.tech-via {
+    color: var(--paper-mute);
+    font-size: 0.72rem;
+}
+.tech-conf {
+    display: inline-block;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+}
+.tech-conf-high   { color: var(--moss); }
+.tech-conf-medium { color: var(--amber); }
+.tech-conf-low    { color: var(--paper-mute); }
+
+.vuln-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+.vuln-tag {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    padding: 0.4rem 0.7rem;
+    background: var(--ink-3);
+    border: 1px solid var(--blood);
+    color: var(--blood);
+    cursor: pointer;
+    transition: all 0.1s;
+}
+.vuln-tag:hover {
+    background: var(--blood);
+    color: var(--paper);
+}
+.kv-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.5rem 1.5rem;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    margin-top: 1rem;
+}
+.kv-grid dt { color: var(--paper-mute); letter-spacing: 0.08em; }
+.kv-grid dd { color: var(--paper); word-break: break-all; }
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--paper-mute);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 1.1rem;
+}
+
+.path-pill {
+    display: inline-block;
+    padding: 0.25rem 0.55rem;
+    background: var(--ink-3);
+    border: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--paper-dim);
+    margin: 0.15rem;
+}
+.path-status-200 { border-left: 3px solid var(--moss); }
+.path-status-401, .path-status-403 { border-left: 3px solid var(--amber); }
+
+.banner-row {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+}
+.banner-port {
+    color: var(--amber);
+    font-weight: 600;
+    width: 60px;
+    flex-shrink: 0;
+}
+.banner-tech { color: var(--paper); font-weight: 600; }
+.banner-raw { color: var(--paper-mute); font-size: 0.75rem; }
+</style>
+
+<script>
+(function() {
+    function tick() {
+        const el = document.getElementById('fp-time');
+        if (!el) return;
+        const d = new Date();
+        const pad = n => String(n).padStart(2, '0');
+        el.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+    tick();
+    setInterval(tick, 1000);
+})();
+
+async function runFingerprint(e) {
+    e.preventDefault();
+    const target = document.getElementById('targetInput').value.trim();
+    if (!target) return;
+
+    const btn = document.getElementById('runBtn');
+    btn.disabled = true;
+    btn.textContent = 'Profiling…';
+    document.getElementById('fpStatus').style.display = 'block';
+    document.getElementById('fpResults').style.display = 'none';
+
+    try {
+        const r = await fetch(`/api/fingerprint?target=${encodeURIComponent(target)}`);
+        if (!r.ok) {
+            const err = await r.json();
+            toast(err.error || 'Fingerprint failed', 'error');
+            return;
+        }
+        const data = await r.json();
+        renderResults(data);
+    } catch (err) {
+        toast('Network error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Profile Target →';
+        document.getElementById('fpStatus').style.display = 'none';
+    }
+}
+
+function renderResults(d) {
+    const el = document.getElementById('fpResults');
+    el.style.display = 'block';
+
+    const techs = d.technologies || [];
+    const vulns = d.vulnerabilities || [];
+    const banners = d.banners || {};
+    const paths = d.discovered_paths || [];
+    const tls = d.tls || {};
+
+    // Group techs by category
+    const byCat = {};
+    techs.forEach(t => {
+        if (!byCat[t.category]) byCat[t.category] = [];
+        byCat[t.category].push(t);
+    });
+
+    const techRows = techs.map(t => `
+        <tr>
+            <td><span class="tech-cat">${escapeHtml(t.category)}</span></td>
+            <td>
+                <span class="tech-name">${escapeHtml(t.name)}</span>
+                ${t.version ? `<span class="tech-version">  v${escapeHtml(t.version)}</span>` : ''}
+            </td>
+            <td><span class="tech-conf tech-conf-${t.confidence}">${t.confidence}</span></td>
+            <td class="tech-via">${escapeHtml(t.via || '')}</td>
+        </tr>
+    `).join('');
+
+    el.innerHTML = `
+        <section class="card" style="margin-bottom: 2rem;">
+            <div class="section-head">
+                <span class="eyebrow">§ 02 · Summary</span>
+                <span class="dateline">Target: <strong>${escapeHtml(d.target)}</strong></span>
+            </div>
+
+            <div class="fp-summary">
+                <div>
+                    <div class="stat-num">${techs.length}<span class="unit">DETECTED</span></div>
+                    <div class="stat-label">Technologies</div>
+                </div>
+                <div>
+                    <div class="stat-num ${vulns.length > 0 ? 'amber' : ''}">${vulns.length}<span class="unit">CVE</span></div>
+                    <div class="stat-label">Known Vulns</div>
+                </div>
+                <div>
+                    <div class="stat-num">${(d.open_ports || []).length}<span class="unit">PORTS</span></div>
+                    <div class="stat-label">Open Ports</div>
+                </div>
+                <div>
+                    <div class="stat-num">${paths.length}<span class="unit">PATHS</span></div>
+                    <div class="stat-label">Endpoints Found</div>
+                </div>
+            </div>
+
+            <dl class="kv-grid">
+                <dt>URL</dt><dd>${escapeHtml(d.url || '—')}</dd>
+                <dt>IP</dt><dd>${escapeHtml(d.ip || '—')}</dd>
+                <dt>Reverse DNS</dt><dd>${escapeHtml((d.reverse_dns || {}).ptr || '—')}</dd>
+                <dt>HTTP Status</dt><dd>${(d.probe_summary || {}).http_status || '—'}</dd>
+                <dt>Title</dt><dd>${escapeHtml((d.probe_summary || {}).title || '—')}</dd>
+                <dt>Server header</dt><dd>${escapeHtml((d.probe_summary || {}).server_header || '—')}</dd>
+                <dt>Favicon hash</dt><dd>${d.favicon_hash || '—'}</dd>
+            </dl>
+        </section>
+
+        <section class="card" style="margin-bottom: 2rem;">
+            <div class="section-head">
+                <span class="eyebrow">§ 03 · Technology Profile</span>
+                <span class="dateline">${techs.length} <strong>signal${techs.length === 1 ? '' : 's'}</strong></span>
+            </div>
+            ${techs.length === 0
+                ? '<div class="empty-state">No technologies identified.<br><small style="font-size:0.85rem;">Target may use aggressive WAF / minimal signatures.</small></div>'
+                : `<table class="tech-table">
+                    <thead><tr><th>Category</th><th>Name / Version</th><th>Confidence</th><th>Evidence</th></tr></thead>
+                    <tbody>${techRows}</tbody>
+                </table>`}
+        </section>
+
+        ${vulns.length > 0 ? `
+        <section class="card" style="margin-bottom: 2rem; border-left: 3px solid var(--blood);">
+            <div class="section-head">
+                <span class="eyebrow" style="color: var(--blood);">§ 04 · Known Vulnerabilities</span>
+                <span class="dateline">via <strong>Shodan InternetDB</strong></span>
+            </div>
+            <p style="font-family: var(--serif); font-style: italic; color: var(--paper-dim); font-size: 0.95rem; margin-top: 0.75rem;">
+                ${vulns.length} CVE${vulns.length === 1 ? '' : 's'} associated with services on this host.
+                Click any tag to look up details on the NVD database.
+            </p>
+            <div class="vuln-list">
+                ${vulns.map(v => `<a href="https://nvd.nist.gov/vuln/detail/${escapeHtml(v)}" target="_blank" rel="noopener" class="vuln-tag">${escapeHtml(v)}</a>`).join('')}
+            </div>
+        </section>` : ''}
+
+        ${Object.keys(banners).length > 0 ? `
+        <section class="card" style="margin-bottom: 2rem;">
+            <div class="section-head">
+                <span class="eyebrow">§ 05 · Service Banners</span>
+                <span class="dateline">Direct socket reads</span>
+            </div>
+            <div style="margin-top: 1rem;">
+                ${Object.entries(banners).map(([port, b]) => `
+                    <div class="banner-row">
+                        <span class="banner-port">:${escapeHtml(port)}</span>
+                        <div style="flex: 1;">
+                            ${b.tech ? `<div class="banner-tech">${escapeHtml(b.tech)}${b.version ? ' v' + escapeHtml(b.version) : ''}</div>` : ''}
+                            <div class="banner-raw">${escapeHtml(b.raw || '')}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </section>` : ''}
+
+        ${tls && tls.subject ? `
+        <section class="card" style="margin-bottom: 2rem;">
+            <div class="section-head">
+                <span class="eyebrow">§ 06 · TLS Certificate</span>
+                <span class="dateline">${escapeHtml(tls.tls_version || '—')} · ${escapeHtml(tls.cipher || '—')}</span>
+            </div>
+            <dl class="kv-grid">
+                <dt>Subject CN</dt><dd>${escapeHtml((tls.subject || {}).commonName || '—')}</dd>
+                <dt>Issuer</dt><dd>${escapeHtml((tls.issuer || {}).organizationName || (tls.issuer || {}).commonName || '—')}</dd>
+                <dt>Valid from</dt><dd>${escapeHtml(tls.notBefore || '—')}</dd>
+                <dt>Valid until</dt><dd>${escapeHtml(tls.notAfter || '—')}</dd>
+                <dt>SAN list</dt><dd>${(tls.subjectAltName || []).slice(0, 8).map(escapeHtml).join(', ')}${(tls.subjectAltName || []).length > 8 ? ` <span style="color:var(--paper-mute);">+${tls.subjectAltName.length - 8} more</span>` : ''}</dd>
+                <dt>SHA-256</dt><dd style="font-size:0.7rem;">${escapeHtml(tls.fingerprint_sha256 || '—')}</dd>
+            </dl>
+        </section>` : ''}
+
+        ${paths.length > 0 ? `
+        <section class="card" style="margin-bottom: 2rem;">
+            <div class="section-head">
+                <span class="eyebrow">§ 07 · Endpoints Discovered</span>
+                <span class="dateline">${paths.length} <strong>${paths.length === 1 ? 'path' : 'paths'}</strong></span>
+            </div>
+            <div style="margin-top: 1rem;">
+                ${paths.map(p => `<span class="path-pill path-status-${p.status}" title="${p.size} bytes · ${escapeHtml(p.type || '')}">${escapeHtml(p.path)} <small style="color:var(--paper-mute)">[${p.status}]</small></span>`).join('')}
+            </div>
+        </section>` : ''}
+
+        <section class="card" style="margin-bottom: 2rem;">
+            <div class="section-head">
+                <span class="eyebrow">§ 08 · Raw HTTP Headers</span>
+                <span class="dateline">As received</span>
+            </div>
+            <pre style="margin-top: 1rem; padding: 1rem; background: var(--ink); border: 1px solid var(--rule); font-family: var(--mono); font-size: 0.75rem; color: var(--paper-dim); overflow-x: auto; white-space: pre-wrap;">${Object.entries(d.headers || {}).map(([k, v]) => `<span style="color: var(--amber);">${escapeHtml(k)}</span>: ${escapeHtml(String(v))}`).join('\n')}</pre>
+        </section>
+    `;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+{% endblock %}

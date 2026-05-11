@@ -63,6 +63,9 @@
                 <a href="/results" class="nav-link {% if request.endpoint == 'main.results_page' %}active{% endif %}">
                     <span class="nav-icon">🔍</span> Search
                 </a>
+                <a href="/fingerprint" class="nav-link {% if request.endpoint == 'main.fingerprint_page' %}active{% endif %}">
+                    <span class="nav-icon">⌗</span> Fingerprint
+                </a>
                 <a href="/settings" class="nav-link {% if request.endpoint == 'main.settings_page' %}active{% endif %}">
                     <span class="nav-icon">⚙️</span> Settings
                 </a>
@@ -254,6 +257,7 @@
             { id: 'dashboard', icon: '📊', label: 'Dashboard',       hint: 'G D', url: '/dashboard' },
             { id: 'websites',  icon: '🌐', label: 'Websites',        hint: 'G W', url: '/subdomains' },
             { id: 'search',    icon: '🔍', label: 'Search Results',  hint: 'G S', url: '/results' },
+            { id: 'fingerprint', icon: '⌗', label: 'Technology Fingerprint', hint: 'G F', url: '/fingerprint' },
             { id: 'settings',  icon: '⚙️', label: 'Settings',        hint: 'G ,', url: '/settings' },
             { id: 'profile',   icon: '👤', label: 'Profile & API Key',          url: '/auth/profile' },
             { id: 'password',  icon: '🔑', label: 'Change Password',            url: '/auth/change_password' },
@@ -371,7 +375,8 @@
                 clearTimeout(gTimeout);
                 const map = {
                     'n': '/', 'd': '/dashboard', 'w': '/subdomains',
-                    's': '/results', ',': '/settings', 'p': '/auth/profile',
+                    's': '/results', 'f': '/fingerprint',
+                    ',': '/settings', 'p': '/auth/profile',
                 };
                 if (map[e.key.toLowerCase()]) {
                     e.preventDefault();

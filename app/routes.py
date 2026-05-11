@@ -446,6 +446,62 @@ def scan_stream():
     )
 
 
+# ── Technology Fingerprinting ─────────────────────────────────────
+
+@main_bp.route("/fingerprint", methods=["GET"])
+def fingerprint_page():
+    return render_template("fingerprint.html")
+
+
+@main_bp.route("/api/fingerprint", methods=["GET", "POST"])
+@api_error_handler
+def api_fingerprint():
+    """Run a comprehensive technology fingerprint on a URL/host/IP.
+
+    Returns detected technologies (with versions), known vulnerabilities
+    (from Shodan InternetDB), TLS info, open ports, banners, and discovered
+    paths. All checks use only free open-source data sources.
+    """
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        target = body.get("target", "").strip()
+    else:
+        target = request.args.get("target", "").strip()
+
+    if not target:
+        return jsonify({"error": "Target required (URL, host, or IP)"}), 400
+
+    # Basic input validation — reject obvious bad input
+    if len(target) > 256 or any(c in target for c in [" ", ";", "|", "&", "$"]):
+        return jsonify({"error": "Invalid target format"}), 400
+
+    from .core.tech_fingerprint_pro import fingerprint as run_fingerprint
+    import asyncio as _asyncio
+
+    loop = _asyncio.new_event_loop()
+    try:
+        result = loop.run_until_complete(run_fingerprint(target))
+    finally:
+        loop.close()
+
+    # Optional: persist scan to MongoDB for history
+    if current_app.db is not None and current_user.is_authenticated:
+        try:
+            current_app.db.fingerprint_history.insert_one({
+                "target": target,
+                "created_by": current_user.id,
+                "created_by_username": current_user.username,
+                "timestamp": datetime.utcnow(),
+                "technologies_count": len(result.get("technologies", [])),
+                "vulnerabilities_count": len(result.get("vulnerabilities", [])),
+                "summary": result.get("probe_summary", {}),
+            })
+        except Exception:
+            pass
+
+    return jsonify(result)
+
+
 # ── Search (with regex injection fix) ─────────────────────────────
 
 @main_bp.route("/search/title", methods=["GET"])
