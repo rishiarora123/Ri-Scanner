@@ -74,7 +74,11 @@ def create_app():
     # Register Blueprints
     from .routes import main_bp
     app.register_blueprint(main_bp)
-    
+
+    # Initialize authentication system
+    from .auth import init_auth
+    init_auth(app)
+
     # SECURITY: Add security headers middleware
     @app.after_request
     def add_security_headers(response):

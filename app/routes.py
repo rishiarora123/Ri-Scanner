@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, jsonify, Response, current_app
+from flask import Blueprint, render_template, request, jsonify, Response, current_app, redirect, url_for
+from flask_login import current_user, login_required
 import threading
 import os
 import json
@@ -16,6 +17,39 @@ from .core.fuzzing_manager import fuzzing_manager
 from .error_handlers import api_error_handler
 
 main_bp = Blueprint('main', __name__)
+
+
+# ── Auth enforcement for all main_bp routes ──────────────────────
+# Endpoints that should return JSON 401 (not a redirect) when unauthenticated.
+# These are the AJAX/polling endpoints used by the dashboard JS.
+_JSON_ENDPOINTS = {
+    'main.get_status_route', 'main.get_logs', 'main.scan_status',
+    'main.continue_scan', 'main.stop_scan', 'main.start_scan',
+    'main.update_status_route', 'main.log_message',
+}
+
+
+@main_bp.before_request
+def require_login():
+    """Require authentication for every route in this blueprint.
+
+    API/AJAX requests get a 401 JSON response; page requests get redirected.
+    """
+    if current_user.is_authenticated:
+        return  # OK
+
+    # API/AJAX endpoints → 401 JSON
+    is_api = (
+        request.path.startswith('/api/')
+        or request.endpoint in _JSON_ENDPOINTS
+        or request.headers.get('Accept', '').startswith('application/json')
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    )
+    if is_api:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    # Page endpoints → redirect to login
+    return redirect(url_for('auth.login', next=request.url))
 
 # ── Global Scan State ─────────────────────────────────────────────
 scan_status = {
