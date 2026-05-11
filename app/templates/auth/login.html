@@ -1,0 +1,63 @@
+{% extends "auth/_auth_base.html" %}
+{% block title %}Sign In · Ri-Scanner Pro{% endblock %}
+
+{% block auth_content %}
+<div class="auth-card">
+    <div class="auth-header">
+        <div class="auth-logo">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="4" y="4" width="40" height="40" rx="10" fill="url(#g1)"/>
+                <path d="M14 24 L22 32 L34 16" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <defs>
+                    <linearGradient id="g1" x1="0" y1="0" x2="48" y2="48">
+                        <stop offset="0%" stop-color="#7c3aed"/>
+                        <stop offset="100%" stop-color="#06b6d4"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+        <h1>Welcome back</h1>
+        <p class="auth-subtitle">Sign in to Ri-Scanner Pro</p>
+    </div>
+
+    {% if first_run %}
+    <div class="auth-banner">
+        <strong>👋 First time here?</strong>
+        <a href="{{ url_for('auth.register') }}">Create the admin account →</a>
+    </div>
+    {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="auth-alert auth-alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <form method="POST" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autofocus
+                   autocomplete="username" placeholder="your_username">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required
+                   autocomplete="current-password" placeholder="••••••••">
+        </div>
+
+        <div class="form-row">
+            <label class="checkbox-label">
+                <input type="checkbox" name="remember"> Remember me
+            </label>
+        </div>
+
+        <button type="submit" class="auth-btn">Sign In</button>
+    </form>
+
+    <p class="auth-footer-text">
+        Don't have an account? <a href="{{ url_for('auth.register') }}">Sign up</a>
+    </p>
+</div>
+{% endblock %}

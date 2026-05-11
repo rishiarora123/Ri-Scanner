@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Profile · Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>👤 Profile</h1>
+    <p class="page-subtitle">Manage your account and API key</p>
+</div>
+
+<div class="profile-grid">
+    <div class="card">
+        <h2>Account Info</h2>
+        <dl class="info-list">
+            <dt>Username</dt>
+            <dd>{{ user.username }}</dd>
+
+            <dt>Email</dt>
+            <dd>{{ user.email or '—' }}</dd>
+
+            <dt>Role</dt>
+            <dd>
+                <span class="badge badge-{{ 'success' if user.is_admin else 'info' }}">
+                    {{ user.role }}
+                </span>
+            </dd>
+
+            <dt>Member since</dt>
+            <dd>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else '—' }}</dd>
+
+            <dt>Last login</dt>
+            <dd>{{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else '—' }}</dd>
+        </dl>
+    </div>
+
+    <div class="card">
+        <h2>API Key</h2>
+        <p class="text-muted">Use this key for programmatic access via the <code>X-API-Key</code> header.</p>
+
+        <div class="api-key-display">
+            <code id="apiKey">{{ user.api_key }}</code>
+            <button class="btn btn-sm" onclick="copyApiKey()">📋 Copy</button>
+        </div>
+
+        <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+            <button class="btn-sm btn-danger" onclick="regenerateKey()">
+                🔄 Regenerate API Key
+            </button>
+            <a href="{{ url_for('auth.change_password') }}" class="btn-sm">
+                🔑 Change Password
+            </a>
+        </div>
+
+        <details style="margin-top: 1.5rem;">
+            <summary>Example usage</summary>
+            <pre class="code-block">curl -H "X-API-Key: {{ user.api_key }}" \
+     http://localhost:5000/api/results</pre>
+        </details>
+    </div>
+</div>
+
+<script>
+function copyApiKey() {
+    const key = document.getElementById('apiKey').textContent;
+    navigator.clipboard.writeText(key).then(() => {
+        alert('API key copied to clipboard');
+    });
+}
+
+async function regenerateKey() {
+    if (!confirm('Regenerate API key? The old key will stop working immediately.')) return;
+    const r = await fetch('/auth/regenerate_api_key', { method: 'POST' });
+    if (r.ok) {
+        const data = await r.json();
+        document.getElementById('apiKey').textContent = data.api_key;
+        alert('API key regenerated.');
+    } else {
+        alert('Failed to regenerate key.');
+    }
+}
+</script>
+{% endblock %}

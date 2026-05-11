@@ -32,21 +32,24 @@ def cleanup_handler(sig=None, frame=None):
             except Exception as e:
                 print(f"[!] Could not remove {path}: {e}")
     
-    # Kill any stray masscan processes
     try:
-        subprocess.run(["killall", "-q", "masscan"], 
-                      stdout=subprocess.DEVNULL, 
-                      stderr=subprocess.DEVNULL)
-    except:
+        subprocess.run(["killall", "masscan"],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
         pass
     
     if sig is not None:
         sys.exit(0)
 
 def check_sudo():
-    if os.geteuid() != 0:
-        print("[!] This script requires root privileges for Masscan. Please run with sudo.")
-        sys.exit(1)
+    """Check sudo access. Masscan can work without sudo on macOS if BPF permissions are set."""
+    has_sudo = subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0
+    if not has_sudo and os.geteuid() != 0:
+        print("[!] Warning: No passwordless sudo. Masscan may need root for raw sockets.")
+        print("[!] To fix: run 'sudo -v' before starting, or add masscan to sudoers.")
+        print("[!] Continuing anyway — masscan will attempt non-root mode first.")
 
 def open_browser():
     time.sleep(2)
@@ -56,8 +59,7 @@ def open_browser():
         pass
 
 if __name__ == "__main__":
-    # SECURITY: Uncommented sudo check - required for Masscan
-    # check_sudo()
+    check_sudo()
     
     # Register cleanup handlers
     signal.signal(signal.SIGINT, cleanup_handler)

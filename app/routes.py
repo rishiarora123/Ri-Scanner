@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, jsonify, Response, current_app
+from flask import Blueprint, render_template, request, jsonify, Response, current_app, redirect, url_for
+from flask_login import current_user, login_required
 import threading
 import os
 import json
@@ -16,6 +17,39 @@ from .core.fuzzing_manager import fuzzing_manager
 from .error_handlers import api_error_handler
 
 main_bp = Blueprint('main', __name__)
+
+
+# ── Auth enforcement for all main_bp routes ──────────────────────
+# Endpoints that should return JSON 401 (not a redirect) when unauthenticated.
+# These are the AJAX/polling endpoints used by the dashboard JS.
+_JSON_ENDPOINTS = {
+    'main.get_status_route', 'main.get_logs', 'main.scan_status',
+    'main.continue_scan', 'main.stop_scan', 'main.start_scan',
+    'main.update_status_route', 'main.log_message',
+}
+
+
+@main_bp.before_request
+def require_login():
+    """Require authentication for every route in this blueprint.
+
+    API/AJAX requests get a 401 JSON response; page requests get redirected.
+    """
+    if current_user.is_authenticated:
+        return  # OK
+
+    # API/AJAX endpoints → 401 JSON
+    is_api = (
+        request.path.startswith('/api/')
+        or request.endpoint in _JSON_ENDPOINTS
+        or request.headers.get('Accept', '').startswith('application/json')
+        or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    )
+    if is_api:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    # Page endpoints → redirect to login
+    return redirect(url_for('auth.login', next=request.url))
 
 # ── Global Scan State ─────────────────────────────────────────────
 scan_status = {
@@ -65,6 +99,42 @@ def run_async_in_thread(coro):
     asyncio.set_event_loop(loop)
     loop.run_until_complete(coro)
     loop.close()
+
+
+# ── Server-Sent Events stream ─────────────────────────────────────
+# More efficient than polling: pushes status + logs to dashboard the
+# moment they change, no 1.5s lag.
+def _scan_event_stream():
+    """Yield SSE-formatted scan status updates."""
+    last_phase = None
+    last_log_idx = 0
+    while True:
+        try:
+            # Status update on change
+            current_phase_signature = (
+                scan_status.get('phase'),
+                scan_status.get('masscan_pct'),
+                scan_status.get('naabu_pct'),
+                scan_status.get('found_count'),
+                scan_status.get('waiting_for_user'),
+            )
+            if current_phase_signature != last_phase:
+                last_phase = current_phase_signature
+                yield f"event: status\ndata: {json.dumps(scan_status)}\n\n"
+
+            # New log lines
+            if len(scan_logs) > last_log_idx:
+                new_logs = scan_logs[last_log_idx:]
+                last_log_idx = len(scan_logs)
+                yield f"event: logs\ndata: {json.dumps(new_logs)}\n\n"
+
+            # Heartbeat every 15s so clients don't disconnect
+            yield ": heartbeat\n\n"
+            time.sleep(0.5)
+        except GeneratorExit:
+            return
+        except Exception:
+            time.sleep(1)
 
 
 # ── Page Routes ───────────────────────────────────────────────────
@@ -178,15 +248,42 @@ def start_scan():
     # Reset Status
     global scan_status, scan_logs, scan_context
     scan_status.update({
-        "phase": "🚀 Initializing scan...", 
+        "phase": "🚀 Initializing scan...",
         "masscan_progress": 0, "masscan_total": 0,
         "masscan_ranges_done": 0, "masscan_ranges_total": 0,
         "naabu_progress": 0, "naabu_total": 0,
         "found_count": 0, "active_threads": threads,
-        "estimated_remaining": "Calculating..."
+        "estimated_remaining": "Calculating...",
+        # Per-user tracking
+        "created_by": current_user.id,
+        "created_by_username": current_user.username,
+        "target": target,
+        "mode": mode,
+        "started_at": datetime.utcnow().isoformat(),
     })
     scan_logs.clear()
-    scan_logs.append(f"✅ Deep Scan started - Target: {target}")
+    scan_logs.append(f"✅ Deep Scan started by {current_user.username} - Target: {target}")
+
+    # Persist scan record to history
+    if current_app.db is not None:
+        try:
+            current_app.db.scan_history.insert_one({
+                "scan_id": target,
+                "created_by": current_user.id,
+                "created_by_username": current_user.username,
+                "mode": mode,
+                "target": target,
+                "threads": threads,
+                "ports": ports,
+                "started_at": datetime.utcnow(),
+                "status": "running",
+            })
+        except Exception as e:
+            print(f"[!] scan_history insert failed: {e}")
+
+    # Audit log
+    from .auth import audit_log
+    audit_log('scan.started', current_user, {'mode': mode, 'target': target[:200]})
     
     scan_context["stop_event"].clear()
     # FIX: Reset all phase gates for the new scan
@@ -222,10 +319,13 @@ def stop_scan():
     scan_context["gate_phase4"].set()
     scan_context["gate_phase3"].set()
     try:
-        subprocess.run(["sudo", "killall", "-q", "masscan"], capture_output=True)
+        subprocess.run(["killall", "masscan"], capture_output=True, timeout=5)
     except Exception: pass
     try:
-        subprocess.run(["sudo", "killall", "-q", "naabu"], capture_output=True)
+        subprocess.run(["sudo", "-n", "killall", "masscan"], capture_output=True, timeout=5)
+    except Exception: pass
+    try:
+        subprocess.run(["killall", "naabu"], capture_output=True, timeout=5)
     except Exception: pass
     scan_status["phase"] = "Stopping..."
     scan_status["waiting_for_user"] = False  # FIX: Clear waiting flag on stop
@@ -302,6 +402,24 @@ def log_message():
 @main_bp.route("/get_logs", methods=["GET"])
 def get_logs_route():
     return jsonify({"logs": scan_logs})
+
+
+@main_bp.route("/stream", methods=["GET"])
+def scan_stream():
+    """Server-Sent Events stream for real-time scan updates.
+
+    Replaces 1.5s polling — dashboard receives updates the moment scan
+    state changes. Falls back gracefully if browser disconnects.
+    """
+    return Response(
+        _scan_event_stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # nginx-friendly
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # ── Search (with regex injection fix) ─────────────────────────────

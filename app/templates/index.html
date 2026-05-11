@@ -5,56 +5,155 @@
 {% block content %}
 <style>
     .scan-container {
-        max-width: 1200px;
+        max-width: 1280px;
         margin: 0 auto;
-        padding: 2rem;
+        padding: 1.5rem 2rem 4rem;
     }
 
-    .header-section {
-        text-align: center;
+    /* ── Editorial Masthead ────────────────────────────────── */
+    .masthead {
+        border-bottom: 4px double var(--paper);
+        padding-bottom: 2.5rem;
         margin-bottom: 3rem;
+        position: relative;
+    }
+    .masthead::before {
+        content: "";
+        position: absolute;
+        top: -1.5rem; left: 0;
+        width: 90%;
+        height: 1px;
+        background: var(--rule-strong);
+    }
+    .masthead-meta {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 1.25rem;
+    }
+    .masthead-title {
+        font-family: var(--serif);
+        font-size: clamp(3rem, 8vw, 6rem) !important;
+        font-weight: 700 !important;
+        font-variation-settings: "opsz" 144, "SOFT" 0;
+        letter-spacing: -0.045em !important;
+        line-height: 0.92 !important;
+        margin: 0 0 1.5rem 0 !important;
+        max-width: 900px;
+    }
+    .masthead-lede {
+        font-family: var(--serif);
+        font-size: clamp(1.05rem, 1.6vw, 1.35rem);
+        font-weight: 400;
+        line-height: 1.45;
+        color: var(--paper-dim);
+        max-width: 720px;
+        margin-bottom: 2.25rem;
+    }
+    .masthead-lede::first-letter {
+        font-weight: 600;
+        color: var(--paper);
+    }
+    .masthead-rail {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+        border-top: 1px solid var(--rule-strong);
+        padding-top: 1rem;
+    }
+    .masthead-rail > div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        padding-right: 1.5rem;
+        border-right: 1px solid var(--rule);
+    }
+    .masthead-rail > div:last-child { border-right: none; padding-right: 0; }
+    .rail-num {
+        font-family: var(--serif);
+        font-size: 2.25rem;
+        font-weight: 600;
+        font-variation-settings: "opsz" 144;
+        line-height: 1;
+        color: var(--paper);
+        font-feature-settings: "tnum" 1;
+        letter-spacing: -0.03em;
+    }
+    .rail-num .unit {
+        font-family: var(--mono);
+        font-size: 0.45em;
+        font-weight: 500;
+        color: var(--paper-mute);
+        letter-spacing: 0.1em;
+        margin-left: 0.2em;
+        vertical-align: 0.4em;
     }
 
-    .header-section h1 {
-        font-size: 2.5rem;
-        color: #3b82f6;
-        margin-bottom: 0.5rem;
-        font-weight: bold;
+    @media (max-width: 700px) {
+        .masthead-rail { grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .masthead-rail > div { border-right: none; border-bottom: 1px solid var(--rule); padding-bottom: 1rem; }
     }
 
-    .header-section p {
-        font-size: 1.1rem;
-        color: #9ca3af;
-        margin-bottom: 0;
-    }
+    /* Keep some original styles but stripped */
+    .header-section, .header-section h1, .header-section p { display: none; }
 
     .tabs-section {
-        display: flex;
-        gap: 1rem;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
         margin-bottom: 2rem;
-        border-bottom: 2px solid rgba(255, 255, 255, 0.1);
-        overflow-x: auto;
+        border: 1px solid var(--rule-strong);
     }
 
     .tab-button {
-        padding: 1rem 1.5rem;
-        background: transparent;
+        padding: 1.5rem 1.25rem;
+        background: var(--ink-2);
         border: none;
-        color: #9ca3af;
-        font-size: 1rem;
+        color: var(--paper-dim);
+        font-family: var(--serif);
+        font-size: 1.15rem;
         font-weight: 500;
         cursor: pointer;
-        border-bottom: 3px solid transparent;
-        transition: all 0.3s;
+        transition: all 0.15s ease;
+        text-align: left;
+        border-right: 1px solid var(--rule);
+        position: relative;
     }
-
+    .tab-button:last-child { border-right: none; }
+    .tab-button::before {
+        content: attr(data-num);
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.65rem;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        color: var(--paper-mute);
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+    }
     .tab-button:hover {
-        color: #60a5fa;
+        background: var(--ink-3);
+        color: var(--paper);
     }
-
     .tab-button.active {
-        color: #60a5fa;
-        border-bottom-color: #60a5fa;
+        background: var(--paper);
+        color: var(--ink);
+    }
+    .tab-button.active::before {
+        color: var(--amber);
+    }
+    .tab-button.active::after {
+        content: "▾";
+        position: absolute;
+        bottom: -1px;
+        left: 50%;
+        transform: translateX(-50%) translateY(50%);
+        color: var(--paper);
+        font-size: 1.5rem;
+        line-height: 0.3;
+    }
+    @media (max-width: 700px) {
+        .tabs-section { grid-template-columns: 1fr 1fr; }
+        .tab-button { border-bottom: 1px solid var(--rule); }
     }
 
     .tab-content {
@@ -66,24 +165,42 @@
     }
 
     .scan-card {
-        background: rgba(17, 24, 39, 0.8);
-        border: 1px solid rgba(59, 130, 246, 0.2);
-        border-radius: 12px;
-        padding: 2rem;
+        background: var(--ink-2);
+        border: 1px solid var(--rule-strong);
+        border-radius: 0;
+        padding: 2.5rem;
         margin-bottom: 2rem;
-        backdrop-filter: blur(10px);
+        backdrop-filter: none;
+        position: relative;
     }
-
+    .scan-card::before {
+        content: "";
+        position: absolute;
+        top: 0; left: 0;
+        width: 60px; height: 3px;
+        background: var(--amber);
+    }
     .scan-card h2 {
-        color: #60a5fa;
+        font-family: var(--serif);
+        color: var(--paper);
         margin-bottom: 0.5rem;
-        font-size: 1.5rem;
+        font-size: 2rem;
+        font-weight: 600;
+        font-variation-settings: "opsz" 144, "SOFT" 0;
+        letter-spacing: -0.025em;
+        line-height: 1.05;
     }
-
-    .scan-card p {
-        color: #d1d5db;
-        margin-bottom: 1.5rem;
-        font-size: 0.95rem;
+    .scan-card h2::before { display: none; }
+    .scan-card > p {
+        font-family: var(--serif);
+        color: var(--paper-dim);
+        margin-bottom: 2rem;
+        font-size: 1.05rem;
+        font-style: italic;
+        font-variation-settings: "opsz" 30, "SOFT" 100;
+        max-width: 60ch;
+        border-bottom: 1px solid var(--rule);
+        padding-bottom: 1.5rem;
     }
 
     .form-group {
@@ -92,10 +209,17 @@
 
     .form-label {
         display: block;
-        color: #e5e7eb;
-        font-weight: 500;
+        color: var(--paper-mute);
+        font-family: var(--mono);
+        font-weight: 600;
         margin-bottom: 0.5rem;
-        font-size: 0.95rem;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+    }
+    .form-label::before {
+        content: "▸ ";
+        color: var(--amber);
     }
 
     .form-input,
@@ -151,39 +275,80 @@
     }
 
     .btn-primary {
-        background: #3b82f6;
-        color: white;
+        background: var(--amber) !important;
+        color: var(--ink) !important;
         width: 100%;
+        font-family: var(--mono) !important;
+        font-size: 0.85rem !important;
+        font-weight: 700 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        padding: 1.1rem 1.5rem !important;
+        border-radius: 0 !important;
+        border: 1px solid var(--amber) !important;
+        box-shadow: 6px 6px 0 var(--ink) !important;
+        transition: transform 0.08s ease, background 0.15s ease !important;
+        cursor: pointer;
     }
 
-    .btn-primary:hover {
-        background: #2563eb;
-        transform: translateY(-2px);
+    .btn-primary:hover:not(:disabled) {
+        background: var(--paper) !important;
+        color: var(--ink) !important;
+        transform: translate(-1px, -1px);
+        box-shadow: 7px 7px 0 var(--ink) !important;
+    }
+
+    .btn-primary:active:not(:disabled) {
+        transform: translate(1px, 1px);
+        box-shadow: 5px 5px 0 var(--ink) !important;
     }
 
     .btn-primary:disabled {
-        background: #6b7280;
+        background: var(--ink-3) !important;
+        color: var(--paper-mute) !important;
+        border-color: var(--rule-strong) !important;
         cursor: not-allowed;
         transform: none;
+        box-shadow: none !important;
     }
 
+    .btn-primary span { position: relative; z-index: 1; }
+
     .btn-secondary {
-        background: #6366f1;
-        color: white;
+        background: transparent !important;
+        color: var(--paper) !important;
+        border: 1px solid var(--paper) !important;
+        border-radius: 0 !important;
+        font-family: var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 0.78rem;
     }
 
     .btn-secondary:hover {
-        background: #4f46e5;
+        background: var(--paper) !important;
+        color: var(--ink) !important;
     }
 
     .info-box {
-        background: rgba(96, 165, 250, 0.1);
-        border-left: 4px solid #60a5fa;
-        padding: 1rem;
-        border-radius: 8px;
+        background: var(--ink);
+        border-left: 4px solid var(--amber);
+        padding: 1rem 1.25rem;
+        border-radius: 0;
         margin-bottom: 1.5rem;
-        color: #e5e7eb;
-        font-size: 0.9rem;
+        color: var(--paper-dim);
+        font-family: var(--mono);
+        font-size: 0.82rem;
+        line-height: 1.55;
+    }
+    .info-box strong {
+        color: var(--amber);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 0.7rem;
+        display: block;
+        margin-bottom: 0.3rem;
     }
 
     .checkbox-group {
@@ -238,21 +403,43 @@
 </style>
 
 <div class="scan-container">
-    <div class="header-section">
-        <h1>🔍 Start New Scan</h1>
-        <p>Choose what you want to scan and let Ri-Scanner do the work</p>
-    </div>
+    <!-- Editorial masthead -->
+    <header class="masthead">
+        <div class="masthead-meta">
+            <span class="byline"><span class="dot">●</span> ISSUE NO. 042 · {{ current_user.username|upper if current_user.is_authenticated else 'GUEST' }} · <span id="masthead-date"></span></span>
+        </div>
+        <h1 class="masthead-title">
+            Begin <span class="serif-italic amber">reconnaissance</span><span style="color:var(--amber)">.</span>
+        </h1>
+        <p class="masthead-lede">
+            Map an attack surface in minutes. Enumerate every subdomain, fingerprint every open service, and route the findings into a single intelligence dossier.
+        </p>
+        <div class="masthead-rail">
+            <div><span class="label-mono">Phases</span><strong class="rail-num">04</strong></div>
+            <div><span class="label-mono">Tools wired</span><strong class="rail-num">12</strong></div>
+            <div><span class="label-mono">Avg. scan</span><strong class="rail-num">2-15<span class="unit">MIN</span></strong></div>
+            <div><span class="label-mono">Output</span><strong class="rail-num" style="font-size:1.5rem;letter-spacing:0;">JSON · CSV · PDF</strong></div>
+        </div>
+    </header>
 
-    <div class="tabs-section">
-        <button class="tab-button active" onclick="switchTab('scan-domain')">📍 Scan Domain</button>
-        <button class="tab-button" onclick="switchTab('scan-ip')">🎯 Scan Single IP</button>
-        <button class="tab-button" onclick="switchTab('scan-asn')">🌐 Scan by ASN</button>
-        <button class="tab-button" onclick="switchTab('scan-bgp')">📡 BGP Search</button>
+    <!-- Mode selector — editorial tabs -->
+    <section class="mode-section">
+        <div class="section-head">
+            <span class="eyebrow">§ 01 · Choose Operation</span>
+            <span class="dateline">Select <strong>one</strong></span>
+        </div>
+    </section>
+
+    <div class="tabs-section" role="tablist">
+        <button class="tab-button active" onclick="switchTab('scan-domain')" data-num="01 · Operation">Domain</button>
+        <button class="tab-button" onclick="switchTab('scan-ip')" data-num="02 · Operation">Single IP</button>
+        <button class="tab-button" onclick="switchTab('scan-asn')" data-num="03 · Operation">ASN</button>
+        <button class="tab-button" onclick="switchTab('scan-bgp')" data-num="04 · Operation">BGP Search</button>
     </div>
 
     <div id="scan-domain" class="tab-content active">
         <div class="scan-card">
-            <h2>📍 Scan a Domain</h2>
+            <h2>Map a <span class="serif-italic amber">domain</span>.</h2>
             <p>Enter a website domain name and Ri-Scanner will find all subdomains, IP addresses, and services.</p>
 
             <form id="form-domain" onsubmit="startDomainScan(event)" novalidate>
@@ -283,14 +470,14 @@
                         </div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary"><span>🚀 Start Domain Scan</span></button>
+                <button type="submit" class="btn btn-primary"><span>Begin Reconnaissance →</span></button>
             </form>
         </div>
     </div>
 
     <div id="scan-ip" class="tab-content">
         <div class="scan-card">
-            <h2>🎯 Scan a Single IP Address</h2>
+            <h2>Probe a single IP.</h2>
             <p>Enter an IP address to get detailed information about it: hostname, ports, services, certificates, and
                 more.</p>
 
@@ -351,14 +538,14 @@
                         </div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary"><span>🎯 Scan This IP</span></button>
+                <button type="submit" class="btn btn-primary"><span>Probe IP →</span></button>
             </form>
         </div>
     </div>
 
     <div id="scan-asn" class="tab-content">
         <div class="scan-card">
-            <h2>🌐 Scan by ASN (Network)</h2>
+            <h2>Sweep an entire <span class="serif-italic amber">network</span>.</h2>
             <p>Enter Autonomous System Numbers to scan all IP ranges owned by that organization.</p>
 
             <form id="form-asn" onsubmit="startASNScan(event)" novalidate>
@@ -390,14 +577,14 @@
                         </div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary"><span>�� Start ASN Scan</span></button>
+                <button type="submit" class="btn btn-primary"><span>Begin Network Sweep →</span></button>
             </form>
         </div>
     </div>
 
     <div id="scan-bgp" class="tab-content">
         <div class="scan-card">
-            <h2>📡 BGP Intelligence Search</h2>
+            <h2>Search the <span class="serif-italic amber">BGP routing table</span>.</h2>
             <p>Search for an organization by name to find all their ASNs and IP ranges.</p>
 
             <div id="bgp-message"></div>
@@ -415,7 +602,7 @@
                 </div>
             </div>
             <button type="button" onclick="startIntelScan()" id="btn-bgp-scan" class="btn btn-primary"
-                style="display: none;">🚀 Start Scan on Selected</button>
+                style="display: none;">Begin Reconnaissance on Selected →</button>
         </div>
     </div>
 </div>
@@ -602,5 +789,14 @@
             return num >= 0 && num <= 255;
         });
     }
+
+    // Editorial dateline — formatted like a magazine masthead
+    (function() {
+        const el = document.getElementById('masthead-date');
+        if (!el) return;
+        const d = new Date();
+        const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        el.textContent = `${months[d.getMonth()]} ${String(d.getDate()).padStart(2,'0')} · ${d.getFullYear()}`;
+    })();
 </script>
 {% endblock %}

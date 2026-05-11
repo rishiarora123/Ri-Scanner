@@ -1,0 +1,70 @@
+{% extends "auth/_auth_base.html" %}
+{% block title %}Create Account · Ri-Scanner Pro{% endblock %}
+
+{% block auth_content %}
+<div class="auth-card">
+    <div class="auth-header">
+        <div class="auth-logo">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="4" y="4" width="40" height="40" rx="10" fill="url(#g2)"/>
+                <path d="M24 14 V34 M14 24 H34" stroke="white" stroke-width="3" stroke-linecap="round"/>
+                <defs>
+                    <linearGradient id="g2" x1="0" y1="0" x2="48" y2="48">
+                        <stop offset="0%" stop-color="#7c3aed"/>
+                        <stop offset="100%" stop-color="#06b6d4"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+        <h1>{% if first_run %}Create admin account{% else %}Create account{% endif %}</h1>
+        <p class="auth-subtitle">
+            {% if first_run %}
+                You'll be the first user — you become the admin automatically.
+            {% else %}
+                Sign up for Ri-Scanner Pro
+            {% endif %}
+        </p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+            <div class="auth-alert auth-alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <form method="POST" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autofocus
+                   autocomplete="username" placeholder="3-32 chars, letters/numbers/_"
+                   pattern="[a-zA-Z0-9_]{3,32}" minlength="3" maxlength="32">
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email <span class="optional">(optional)</span></label>
+            <input type="email" id="email" name="email"
+                   autocomplete="email" placeholder="you@example.com">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required
+                   autocomplete="new-password" placeholder="At least 8 chars, letters + numbers"
+                   minlength="8">
+        </div>
+
+        <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required
+                   autocomplete="new-password" placeholder="Repeat password" minlength="8">
+        </div>
+
+        <button type="submit" class="auth-btn">Create Account</button>
+    </form>
+
+    <p class="auth-footer-text">
+        Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a>
+    </p>
+</div>
+{% endblock %}

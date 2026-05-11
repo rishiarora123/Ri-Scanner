@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}User Management · Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>👥 User Management</h1>
+    <p class="page-subtitle">Manage user accounts, roles, and access</p>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Last Login</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr class="{% if u.id == current_id %}user-row-self{% endif %} {% if not u.is_active_user %}user-row-disabled{% endif %}" data-user-id="{{ u.id }}">
+                <td>
+                    <div style="display:flex; align-items:center; gap:.5rem;">
+                        <span class="user-avatar" style="width:32px; height:32px;">{{ u.username[0]|upper }}</span>
+                        <strong>{{ u.username }}</strong>
+                        {% if u.id == current_id %}<span class="badge badge-info">you</span>{% endif %}
+                    </div>
+                </td>
+                <td>{{ u.email or '—' }}</td>
+                <td>
+                    {% if u.id == current_id %}
+                        <span class="badge badge-{{ 'success' if u.is_admin else 'info' }}">{{ u.role }}</span>
+                    {% else %}
+                        <select class="role-select" onchange="changeRole('{{ u.id }}', this.value)">
+                            <option value="operator" {% if u.role == 'operator' %}selected{% endif %}>operator</option>
+                            <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>admin</option>
+                        </select>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if u.is_locked %}
+                        <span class="badge" style="background: rgba(245,158,11,.15); color:#fcd34d;">🔒 Locked</span>
+                    {% elif u.is_active_user %}
+                        <span class="badge badge-success">Active</span>
+                    {% else %}
+                        <span class="badge" style="background: rgba(239,68,68,.15); color:#fca5a5;">Disabled</span>
+                    {% endif %}
+                </td>
+                <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
+                <td>{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else 'Never' }}</td>
+                <td>
+                    {% if u.id != current_id %}
+                    <button class="btn-sm" onclick="toggleActive('{{ u.id }}', '{{ u.username }}')">
+                        {% if u.is_active_user %}Disable{% else %}Enable{% endif %}
+                    </button>
+                    <button class="btn-sm btn-danger" onclick="deleteUser('{{ u.id }}', '{{ u.username }}')">
+                        Delete
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<p style="margin-top: 1rem;">
+    <a href="{{ url_for('admin.audit') }}" class="btn-sm">📜 View Audit Log →</a>
+</p>
+
+<script>
+async function changeRole(userId, role) {
+    const r = await fetch(`/admin/users/${userId}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `role=${role}`,
+    });
+    if (r.ok) toast(`Role updated to ${role}`, 'success');
+    else { toast('Failed to update role', 'error'); setTimeout(() => location.reload(), 1000); }
+}
+
+async function toggleActive(userId, username) {
+    if (!confirm(`Toggle active status for "${username}"?`)) return;
+    const r = await fetch(`/admin/users/${userId}/toggle_active`, { method: 'POST' });
+    if (r.ok) { toast('Status updated', 'success'); setTimeout(() => location.reload(), 500); }
+    else toast('Failed', 'error');
+}
+
+async function deleteUser(userId, username) {
+    if (!confirm(`Permanently delete user "${username}"? This cannot be undone.`)) return;
+    const r = await fetch(`/admin/users/${userId}/delete`, { method: 'POST' });
+    if (r.ok) { toast(`User "${username}" deleted`, 'success'); setTimeout(() => location.reload(), 500); }
+    else toast('Failed to delete', 'error');
+}
+</script>
+{% endblock %}

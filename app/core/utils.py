@@ -82,58 +82,91 @@ def resolve_asn_to_ips(asn):
 
 def search_bgp_intel(query):
     """
-    Search BGPView for ASNs by name/description, OR 
+    Search for ASNs by name/description, OR
     scrape Hurricane Electric (HE) URLs for ASNs and direct IPv4 ranges.
     Returns: { "asns": [...], "ipv4": [...] }
     """
     results = {"asns": [], "ipv4": []}
     try:
         session = _get_session()
-        
+
         # 1. Handle HE BGP URL Scraping
         if "bgp.he.net" in query and (query.startswith("http://") or query.startswith("https://")):
             headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
             }
             response = session.get(query, headers=headers, timeout=15)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Extract ASNs (e.g., AS15169)
-                asn_matches = re.findall(r'AS\d+', response.text)
+            if response.status_code != 200:
+                print(f"[!] HE BGP returned status {response.status_code}")
+                return results
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Parse the structured results table (columns: Result, Type, Description)
+            table = soup.find('table')
+            if table:
                 seen_asns = set()
-                for asn in asn_matches:
-                    if asn not in seen_asns:
+                seen_prefixes = set()
+                rows = table.find_all('tr')
+                for row in rows[1:]:  # Skip header row
+                    cells = row.find_all('td')
+                    if len(cells) < 3:
+                        continue
+                    result_text = cells[0].get_text(strip=True)
+                    type_text = cells[1].get_text(strip=True)
+                    desc_text = cells[2].get_text(strip=True)
+
+                    if type_text == "ASN" and result_text not in seen_asns:
+                        seen_asns.add(result_text)
                         results["asns"].append({
-                            "asn": asn,
-                            "name": "Scraped from HE",
+                            "asn": result_text,
+                            "name": desc_text,
                             "country": "??",
-                            "description": f"Discovered via HE Search: {asn}"
+                            "description": desc_text
                         })
-                        seen_asns.add(asn)
-                
-                # Extract IPv4 CIDRs (e.g., 8.8.8.0/24)
-                # Regex for simple IPv4 CIDR
-                ipv4_cidr_regex = r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/\d{1,2}\b'
-                ipv4_matches = re.findall(ipv4_cidr_regex, response.text)
-                results["ipv4"] = list(set(ipv4_matches)) # Deduplicate
+                    elif type_text == "Route" and result_text not in seen_prefixes:
+                        seen_prefixes.add(result_text)
+                        results["ipv4"].append(result_text)
+            else:
+                # Fallback: regex extraction if table structure changed
+                asn_matches = set(re.findall(r'\bAS\d+\b', response.text))
+                for asn in asn_matches:
+                    results["asns"].append({
+                        "asn": asn, "name": "Scraped from HE",
+                        "country": "??", "description": asn
+                    })
+                ipv4_cidr_regex = r'\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\/\d{1,2}\b'
+                results["ipv4"] = list(set(re.findall(ipv4_cidr_regex, response.text)))
+
+            print(f"[+] HE BGP scraped: {len(results['asns'])} ASNs, {len(results['ipv4'])} routes")
             return results
 
-        # 2. Default BGPView Search (by Organization Name)
-        url = f"https://api.bgpview.io/search?query_term={query}"
-        response = session.get(url, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("status") == "ok" and "data" in data:
-                for item in data["data"].get("asns", []):
-                    results["asns"].append({
-                        "asn": item.get("asn_name", "AS?"),
-                        "name": item.get("name", ""),
-                        "country": item.get("country_code", ""),
-                        "description": item.get("description", "")
-                    })
-        return results
+        # 2. Default: Search by Organization Name
+        # Try BGPView first, fall back to HE search
+        try:
+            url = f"https://api.bgpview.io/search?query_term={query}"
+            response = session.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "ok" and "data" in data:
+                    for item in data["data"].get("asns", []):
+                        results["asns"].append({
+                            "asn": f"AS{item.get('asn', '?')}",
+                            "name": item.get("name", ""),
+                            "country": item.get("country_code", ""),
+                            "description": item.get("description", "")
+                        })
+                if results["asns"]:
+                    return results
+        except Exception as e:
+            print(f"[!] BGPView API unavailable: {e}")
+
+        # 3. Fallback: Scrape HE search directly
+        he_url = f"https://bgp.he.net/search?search%5Bsearch%5D={requests.utils.quote(query)}&commit=Search"
+        return search_bgp_intel(he_url)
+
     except Exception as e:
         print(f"[!] BGP Search Error: {e}")
         return results
