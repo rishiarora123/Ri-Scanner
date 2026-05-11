@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Audit Log · Ri-Scanner Pro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📜 Audit Log</h1>
+    <p class="page-subtitle">Last 200 system events</p>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Event</th>
+                <th>User</th>
+                <th>IP</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in entries %}
+            <tr>
+                <td><code style="font-size: 0.8rem;">{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</code></td>
+                <td><span class="badge badge-info">{{ e.event }}</span></td>
+                <td>{{ e.username or '—' }}</td>
+                <td><code style="font-size: 0.8rem;">{{ e.ip or '—' }}</code></td>
+                <td><small style="color: var(--text-muted);">
+                    {% if e.details %}{{ e.details|tojson }}{% else %}—{% endif %}
+                </small></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                    No audit entries yet.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<p style="margin-top: 1rem;">
+    <a href="{{ url_for('admin.users') }}" class="btn-sm">← Back to Users</a>
+</p>
+{% endblock %}

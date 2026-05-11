@@ -212,15 +212,42 @@ def start_scan():
     # Reset Status
     global scan_status, scan_logs, scan_context
     scan_status.update({
-        "phase": "🚀 Initializing scan...", 
+        "phase": "🚀 Initializing scan...",
         "masscan_progress": 0, "masscan_total": 0,
         "masscan_ranges_done": 0, "masscan_ranges_total": 0,
         "naabu_progress": 0, "naabu_total": 0,
         "found_count": 0, "active_threads": threads,
-        "estimated_remaining": "Calculating..."
+        "estimated_remaining": "Calculating...",
+        # Per-user tracking
+        "created_by": current_user.id,
+        "created_by_username": current_user.username,
+        "target": target,
+        "mode": mode,
+        "started_at": datetime.utcnow().isoformat(),
     })
     scan_logs.clear()
-    scan_logs.append(f"✅ Deep Scan started - Target: {target}")
+    scan_logs.append(f"✅ Deep Scan started by {current_user.username} - Target: {target}")
+
+    # Persist scan record to history
+    if current_app.db is not None:
+        try:
+            current_app.db.scan_history.insert_one({
+                "scan_id": target,
+                "created_by": current_user.id,
+                "created_by_username": current_user.username,
+                "mode": mode,
+                "target": target,
+                "threads": threads,
+                "ports": ports,
+                "started_at": datetime.utcnow(),
+                "status": "running",
+            })
+        except Exception as e:
+            print(f"[!] scan_history insert failed: {e}")
+
+    # Audit log
+    from .auth import audit_log
+    audit_log('scan.started', current_user, {'mode': mode, 'target': target[:200]})
     
     scan_context["stop_event"].clear()
     # FIX: Reset all phase gates for the new scan

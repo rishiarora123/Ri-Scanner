@@ -563,6 +563,235 @@
 .badge-success { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
 .badge-info { background: rgba(6, 182, 212, 0.15); color: #67e8f9; }
 
+/* ── Command Palette (Cmd+K) ────────────────────────────────── */
+.cmdk-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 1000;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 15vh;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.cmdk-overlay.open {
+    opacity: 1;
+    visibility: visible;
+}
+
+.cmdk-modal {
+    width: 90%;
+    max-width: 600px;
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.8);
+    overflow: hidden;
+    transform: scale(0.96) translateY(-10px);
+    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] .cmdk-modal {
+    background: rgba(255, 255, 255, 0.98);
+}
+
+.cmdk-overlay.open .cmdk-modal {
+    transform: scale(1) translateY(0);
+}
+
+.cmdk-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.cmdk-search-icon {
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+#cmdkInput {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-family: inherit;
+}
+
+#cmdkInput::placeholder {
+    color: var(--text-muted);
+}
+
+.cmdk-hint, .cmdk-shortcut, kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+[data-theme="light"] .cmdk-hint,
+[data-theme="light"] .cmdk-shortcut,
+[data-theme="light"] kbd {
+    background: rgba(15, 23, 42, 0.06);
+}
+
+.cmdk-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.cmdk-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    transition: background 0.1s ease;
+}
+
+.cmdk-item.active {
+    background: linear-gradient(90deg, rgba(124, 58, 237, 0.15), rgba(6, 182, 212, 0.1));
+}
+
+.cmdk-icon {
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.cmdk-label {
+    flex: 1;
+}
+
+.cmdk-empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.cmdk-footer {
+    display: flex;
+    gap: 1.25rem;
+    padding: 0.625rem 1rem;
+    border-top: 1px solid var(--glass-border);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.cmdk-footer kbd {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    margin-right: 0.25rem;
+}
+
+/* ── Admin User Table ───────────────────────────────────────── */
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--glass-bg);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 0.875rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.admin-table th {
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+}
+
+[data-theme="light"] .admin-table th {
+    background: rgba(15, 23, 42, 0.04);
+}
+
+.admin-table tr:last-child td {
+    border-bottom: none;
+}
+
+.admin-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.user-row-self {
+    opacity: 0.7;
+    font-style: italic;
+}
+
+.user-row-disabled {
+    opacity: 0.5;
+}
+
+.btn-sm {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s ease;
+}
+
+.btn-sm:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--glass-border-hover);
+}
+
+.btn-danger {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+}
+
+.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.role-select {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    padding: 0.3rem 0.5rem;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 900px) {
     .nav-links {
