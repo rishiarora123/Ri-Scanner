@@ -101,6 +101,42 @@ def run_async_in_thread(coro):
     loop.close()
 
 
+# ── Server-Sent Events stream ─────────────────────────────────────
+# More efficient than polling: pushes status + logs to dashboard the
+# moment they change, no 1.5s lag.
+def _scan_event_stream():
+    """Yield SSE-formatted scan status updates."""
+    last_phase = None
+    last_log_idx = 0
+    while True:
+        try:
+            # Status update on change
+            current_phase_signature = (
+                scan_status.get('phase'),
+                scan_status.get('masscan_pct'),
+                scan_status.get('naabu_pct'),
+                scan_status.get('found_count'),
+                scan_status.get('waiting_for_user'),
+            )
+            if current_phase_signature != last_phase:
+                last_phase = current_phase_signature
+                yield f"event: status\ndata: {json.dumps(scan_status)}\n\n"
+
+            # New log lines
+            if len(scan_logs) > last_log_idx:
+                new_logs = scan_logs[last_log_idx:]
+                last_log_idx = len(scan_logs)
+                yield f"event: logs\ndata: {json.dumps(new_logs)}\n\n"
+
+            # Heartbeat every 15s so clients don't disconnect
+            yield ": heartbeat\n\n"
+            time.sleep(0.5)
+        except GeneratorExit:
+            return
+        except Exception:
+            time.sleep(1)
+
+
 # ── Page Routes ───────────────────────────────────────────────────
 
 @main_bp.route("/")
@@ -366,6 +402,24 @@ def log_message():
 @main_bp.route("/get_logs", methods=["GET"])
 def get_logs_route():
     return jsonify({"logs": scan_logs})
+
+
+@main_bp.route("/stream", methods=["GET"])
+def scan_stream():
+    """Server-Sent Events stream for real-time scan updates.
+
+    Replaces 1.5s polling — dashboard receives updates the moment scan
+    state changes. Falls back gracefully if browser disconnects.
+    """
+    return Response(
+        _scan_event_stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # nginx-friendly
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # ── Search (with regex injection fix) ─────────────────────────────

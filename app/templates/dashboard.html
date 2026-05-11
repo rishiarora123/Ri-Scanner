@@ -3,6 +3,46 @@
 {% block title %}Dashboard - Ri-Scanner Pro{% endblock %}
 
 {% block content %}
+<!-- Editorial dashboard header -->
+<header class="dashboard-masthead">
+    <div class="masthead-meta">
+        <span class="byline">
+            <span class="dot">●</span> SITUATION ROOM · LIVE TELEMETRY · <span id="dash-time"></span>
+        </span>
+        <span class="byline">
+            <span id="dash-target-display"></span>
+        </span>
+    </div>
+    <h1 class="masthead-title" style="font-size: clamp(2rem, 4vw, 3.5rem);">
+        The <span class="serif-italic amber">situation</span> room<span style="color:var(--amber)">.</span>
+    </h1>
+</header>
+
+<style>
+.dashboard-masthead {
+    border-bottom: 4px double var(--paper);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+}
+.dashboard-masthead .masthead-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.dashboard-masthead .masthead-title {
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+}
+#dash-target-display:not(:empty)::before {
+    content: "TARGET: ";
+    color: var(--amber);
+    font-weight: 600;
+}
+</style>
+
 <div style="display: grid; grid-template-columns: 350px 1fr; gap: 2rem;">
     <!-- Sidebar / Stats -->
     <aside class="glass card" style="height: fit-content; position: sticky; top: 100px;">
@@ -359,11 +399,60 @@
     let pollInterval = null;
 
     document.addEventListener('DOMContentLoaded', () => {
-        pollInterval = setInterval(fetchStatus, 1500);
+        // Prefer Server-Sent Events for real-time push; fall back to polling
+        let sseConnected = false;
+        try {
+            const es = new EventSource('/stream');
+            es.addEventListener('status', (e) => {
+                sseConnected = true;
+                try { updateDashboard(JSON.parse(e.data)); } catch (err) {}
+            });
+            es.addEventListener('logs', (e) => {
+                try {
+                    const newLogs = JSON.parse(e.data);
+                    newLogs.forEach(appendLogLine);
+                } catch (err) {}
+            });
+            es.addEventListener('error', () => {
+                // Reconnect or fall back to polling
+                if (!sseConnected) {
+                    es.close();
+                    if (!pollInterval) pollInterval = setInterval(fetchStatus, 1500);
+                }
+            });
+        } catch (err) {
+            console.warn('SSE unavailable, using polling:', err);
+            pollInterval = setInterval(fetchStatus, 1500);
+            setInterval(fetchLogs, 2000);
+        }
+
+        // Always fetch initial state via REST (faster than waiting for first SSE push)
         fetchStatus();
         fetchLogs();
-        setInterval(fetchLogs, 2000);
+
+        // Live clock for editorial header
+        function tickClock() {
+            const el = document.getElementById('dash-time');
+            if (!el) return;
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            el.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop()}`;
+        }
+        tickClock();
+        setInterval(tickClock, 1000);
     });
+
+    function appendLogLine(line) {
+        const el = document.getElementById('log-output');
+        if (!el) return;
+        const wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 10;
+        const div = document.createElement('div');
+        div.textContent = line;
+        el.appendChild(div);
+        // Trim if > 500 lines
+        while (el.children.length > 500) el.removeChild(el.firstChild);
+        if (wasAtBottom) el.scrollTop = el.scrollHeight;
+    }
 
     // ── FIX: Continue Scan (release next phase gate) ─────────────
     async function continueScan() {
@@ -423,6 +512,10 @@
         const phase = s.phase || 'Idle';
         const badge = document.getElementById('phase-badge');
         badge.innerText = phase;
+
+        // Update editorial masthead
+        const targetEl = document.getElementById('dash-target-display');
+        if (targetEl) targetEl.textContent = s.target ? s.target.substring(0, 60) + (s.target.length > 60 ? '...' : '') : 'NO ACTIVE OPERATION';
 
         // Badge class
         badge.className = 'phase-badge';

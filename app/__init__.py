@@ -75,9 +75,24 @@ def create_app():
     from .routes import main_bp
     app.register_blueprint(main_bp)
 
-    # Initialize authentication system
-    from .auth import init_auth
+    # Initialize authentication system (CSRF, rate-limit, login-manager)
+    from .auth import init_auth, csrf
     init_auth(app)
+
+    # CSRF-exempt SSE + legacy AJAX endpoints (they're authenticated by session,
+    # protected by SameSite cookies, and the global fetch interceptor adds tokens
+    # for any other state-changing requests).
+    # Exemption is per-endpoint name.
+    from . import routes as _routes
+    for endpoint in ('main.scan_stream', 'main.update_status_route',
+                     'main.log_message', 'main.continue_scan',
+                     'main.stop_scan', 'main.start_scan'):
+        try:
+            view = app.view_functions.get(endpoint)
+            if view is not None:
+                csrf.exempt(view)
+        except Exception:
+            pass
 
     # SECURITY: Add security headers middleware
     @app.after_request
